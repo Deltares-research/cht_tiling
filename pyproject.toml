@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cht_tiling"
+#description = "Download tide gauge observation data"
+readme = "README.md"
+authors = [
+    { name = "Maarten van Ormondt", email = "maarten.vanormondt@deltares.nl"},
+    { name = "Sarwan Peiter", email = "Sarwan.Peiter@deltares.nl" },
+]
+license = { text = "MIT" }
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Hydrology",
+]
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy","matplotlib","pyproj","pillow"]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+tests = ["pytest"]
+
+[tool.setuptools]
+zip-safe = true
+
+[tool.setuptools.dynamic]
+version = { attr = "cht_tiling.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["cht_tiling"]
+
+[tool.setuptools.package-data]
+"cht_tiling" = ["py.typed"]
+
+# TODO
+[project.urls]
+Source = "https://github.com/Deltares/cht_tiling"
+#Documentation = "https://deltares.github.io/Ribasim"

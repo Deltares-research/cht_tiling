@@ -619,6 +619,103 @@ def make_floodmap_overlay(
     return [lon0, lon1], [lat0, lat1]
 
 
+def make_topo_overlay(
+    topo_path,
+    npixels=[1200, 800],
+    lon_range=None,
+    lat_range=None,
+    color_values=None,
+    caxis=None,
+#    merge=True,
+#    depth=None,
+    quiet=False,
+    file_name=None,
+):
+    """
+    Generates overlay PNG from tiles
+    :param png_path: Output path where the png tiles will be created.
+    :type png_path: str
+    :param option: Option to define the type of tiles to be generated.
+    Options are 'direct', 'floodmap', 'topography'. Defaults to 'direct',
+    in which case the values in *valg* are used directly.
+    :type option: str
+    :param zoom_range: Zoom range for which
+    the png tiles will be created.
+    Defaults to [0, 23].
+    :type zoom_range: list of int
+
+    """
+
+    # Check available levels in index tiles
+    max_zoom = 0
+    levs = fo.list_folders(os.path.join(topo_path, "*"), basename=True)
+    for lev in levs:
+        max_zoom = max(max_zoom, int(lev))
+
+    # Find zoom level that provides sufficient pixels
+    for izoom in range(max_zoom + 1):
+        ix0, iy0 = deg2num(lat_range[0], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[1], lon_range[1], izoom)
+        if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[1]:
+            # Found sufficient zoom level
+            break
+
+    nx = (ix1 - ix0 + 1) * 256
+    ny = (iy1 - iy0 + 1) * 256
+    zz = np.empty((ny, nx))
+    zz[:] = np.nan
+
+    if not quiet:
+        print("Processing zoom level " + str(izoom))
+
+    for i in range(ix0, ix1 + 1):
+        ifolder = str(i)
+        for j in range(iy0, iy1 + 1):
+            # Read bathy
+            bathy_file = os.path.join(
+                topo_path, str(izoom), ifolder, str(j) + ".dat"
+            )
+            if not os.path.exists(bathy_file):
+                # No bathy for this tile, continue
+                continue
+            valt = np.fromfile(bathy_file, dtype="f4")
+
+            ii0 = (i - ix0) * 256
+            ii1 = ii0 + 256
+            jj0 = (iy1 - j) * 256
+            jj1 = jj0 + 256
+            zz[jj0:jj1, ii0:ii1] = np.flipud(valt.reshape([256, 256]))
+
+    if color_values:
+        # Create empty rgb array
+        zz = zz.flatten()
+        rgb = np.zeros((ny * nx, 4), "uint8")
+        # Determine value based on user-defined ranges
+        for color_value in color_values:
+            inr = np.logical_and(
+                zz >= color_value["lower_value"], zz < color_value["upper_value"]
+            )
+            rgb[inr, 0] = color_value["rgb"][0]
+            rgb[inr, 1] = color_value["rgb"][1]
+            rgb[inr, 2] = color_value["rgb"][2]
+            rgb[inr, 3] = 255
+        im = Image.fromarray(rgb.reshape([ny, nx, 4]))
+
+    else:
+        zz = (zz - caxis[0]) / (caxis[1] - caxis[0])
+        zz[zz < 0.0] = 0.0
+        zz[zz > 1.0] = 1.0
+        im = Image.fromarray(cm.jet(zz, bytes=True))
+
+    if file_name:
+        im.save(file_name)
+
+    lat0, lon0 = num2deg_ll(ix0, iy0, izoom)  # lat/lon coordinates of lower left cell
+    lat1, lon1 = num2deg_ur(ix1, iy1, izoom)  # lat/lon coordinates of lower left cell
+    return [lon0, lon1], [lat0, lat1]
+
+
+
 def make_topobathy_tiles(
     path,
     dem_names,

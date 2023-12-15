@@ -612,6 +612,13 @@ def make_floodmap_overlay(
         im = Image.fromarray(cm.jet(zz, bytes=True))
 
     if file_name:
+        # Get the directory part of the file_name
+        directory = os.path.dirname(file_name)
+
+        # If the directory doesn't exist, create it
+        os.makedirs(directory, exist_ok=True)
+
+        # Save the image
         im.save(file_name)
 
     lat0, lon0 = num2deg_ll(ix0, iy0, izoom)  # lat/lon coordinates of lower left cell
@@ -626,8 +633,8 @@ def make_topo_overlay(
     lat_range=None,
     color_values=None,
     caxis=None,
-#    merge=True,
-#    depth=None,
+    #    merge=True,
+    #    depth=None,
     quiet=False,
     file_name=None,
 ):
@@ -672,9 +679,7 @@ def make_topo_overlay(
         ifolder = str(i)
         for j in range(iy0, iy1 + 1):
             # Read bathy
-            bathy_file = os.path.join(
-                topo_path, str(izoom), ifolder, str(j) + ".dat"
-            )
+            bathy_file = os.path.join(topo_path, str(izoom), ifolder, str(j) + ".dat")
             if not os.path.exists(bathy_file):
                 # No bathy for this tile, continue
                 continue
@@ -713,7 +718,6 @@ def make_topo_overlay(
     lat0, lon0 = num2deg_ll(ix0, iy0, izoom)  # lat/lon coordinates of lower left cell
     lat1, lon1 = num2deg_ur(ix1, iy1, izoom)  # lat/lon coordinates of lower left cell
     return [lon0, lon1], [lat0, lat1]
-
 
 
 def make_topobathy_tiles(

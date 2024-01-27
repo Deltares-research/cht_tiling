@@ -461,7 +461,7 @@ def make_floodmap_tiles(
 
                     im.save(png_file)
 
-
+# Following is function with old format. Should be removed asap.
 def make_floodmap_overlay(
     valg,
     index_path,
@@ -478,6 +478,7 @@ def make_floodmap_overlay(
     quiet=False,
     file_name=None,
 ):
+    # Used in FloodAdapt
     """
     Generates overlay PNG from tiles
 
@@ -619,6 +620,176 @@ def make_floodmap_overlay(
     return [lon0, lon1], [lat0, lat1]
 
 
+# Flood map overlay new format
+def make_floodmap_overlay_v2(
+    valg,
+    index_path,
+    topo_path,
+    npixels=[1200, 800],
+    lon_range=None,
+    lat_range=None,
+    option="deterministic",
+    color_values=None,
+    caxis=None,
+    zbmax=-999.0,
+    merge=True,
+    depth=None,
+    quiet=False,
+    file_name=None,
+):
+    """
+    Generates overlay PNG from tiles
+
+    :param valg: Name of the scenario to be run.
+    :type valg: array
+    :param index_path: Path where the index tiles are sitting.
+    :type index_path: str
+    :param png_path: Output path where the png tiles will be created.
+    :type png_path: str
+    :param option: Option to define the type of tiles to be generated.
+    Options are 'direct', 'floodmap', 'topography'. Defaults to 'direct',
+    in which case the values in *valg* are used directly.
+    :type option: str
+    :param zoom_range: Zoom range for which
+    the png tiles will be created.
+    Defaults to [0, 23].
+    :type zoom_range: list of int
+
+    """
+
+    if type(valg) == list:
+        pass
+    else:
+        valg = valg.transpose().flatten()
+
+    if not caxis:
+        caxis = []
+        caxis.append(np.nanmin(valg))
+        caxis.append(np.nanmax(valg))
+
+    # Check available levels in index tiles
+    max_zoom = 0
+    levs = fo.list_folders(os.path.join(index_path, "*"), basename=True)
+    for lev in levs:
+        max_zoom = max(max_zoom, int(lev))
+
+    # Find zoom level that provides sufficient pixels
+    for izoom in range(max_zoom + 1):
+        # ix0, iy0 = deg2num(lat_range[0], lon_range[0], izoom)
+        # ix1, iy1 = deg2num(lat_range[1], lon_range[1], izoom)
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+        if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[1]:
+            # Found sufficient zoom level
+            break
+
+    index_zoom_path = os.path.join(index_path, str(izoom))
+
+    #    dxy = (40075016.686/npix) / 2 ** izoom
+    #    xx = np.linspace(0.0, (256 - 1)*dxy, num=npix)
+    #    yy = xx[:]
+    #    xv, yv = np.meshgrid(xx, yy)
+
+    nx = (ix1 - ix0 + 1) * 256
+    ny = (iy1 - iy0 + 1) * 256
+    zz = np.empty((ny, nx))
+    zz[:] = np.nan
+
+    if not quiet:
+        print("Processing zoom level " + str(izoom))
+
+    index_zoom_path = os.path.join(index_path, str(izoom))
+
+    for i in range(ix0, ix1 + 1):
+        ifolder = str(i)
+        index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
+
+        for j in range(iy0, iy1 + 1):
+            index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
+
+            if not os.path.exists(index_file):
+                continue
+
+            ind = png2int(index_file)
+
+            # ind = np.fromfile(index_file, dtype="i4")
+
+            if option == "probabilistic":
+                # This needs to be fixed later on
+                # valg is actually CDF interpolator to obtain probability of water level
+
+                # Read bathy
+                bathy_file = os.path.join(
+                    topo_path, str(izoom), ifolder, str(j) + ".png"
+                )
+
+                if not os.path.exists(bathy_file):
+                    # No bathy for this tile, continue
+                    continue
+
+     
+                zb = np.fromfile(bathy_file, dtype="f4")
+                zs = zb + depth
+
+                valt = valg[ind](zs)
+                valt[ind < 0] = np.NaN
+
+            else:
+                # Read bathy
+                bathy_file = os.path.join(
+                    topo_path, str(izoom), ifolder, str(j) + ".png"
+                )
+                if not os.path.exists(bathy_file):
+                    # No bathy for this tile, continue
+                    continue
+
+                zb = png2elevation(bathy_file)
+
+                valt = valg[ind]
+                valt = valt - zb
+                valt[valt < 0.05] = np.NaN
+                valt[zb < zbmax] = np.NaN
+
+            ii0 = (i - ix0) * 256
+            ii1 = ii0 + 256
+            jj0 = (j - iy0) * 256
+            jj1 = jj0 + 256
+            # zz[jj0:jj1, ii0:ii1] = np.flipud(valt.reshape([256, 256]))
+            zz[jj0:jj1, ii0:ii1] = valt
+
+    if color_values:
+        # Create empty rgb array
+        zz = zz.flatten()
+        rgb = np.zeros((ny * nx, 4), "uint8")
+        # Determine value based on user-defined ranges
+        for color_value in color_values:
+            inr = np.logical_and(
+                zz >= color_value["lower_value"], zz < color_value["upper_value"]
+            )
+            rgb[inr, 0] = color_value["rgb"][0]
+            rgb[inr, 1] = color_value["rgb"][1]
+            rgb[inr, 2] = color_value["rgb"][2]
+            rgb[inr, 3] = 255
+        im = Image.fromarray(rgb.reshape([ny, nx, 4]))
+
+    else:
+        zz = (zz - caxis[0]) / (caxis[1] - caxis[0])
+        zz[zz < 0.0] = 0.0
+        zz[zz > 1.0] = 1.0
+        im = Image.fromarray(cm.jet(zz, bytes=True))
+
+    if file_name:
+        im.save(file_name)
+
+    lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
+    lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)  # lat/lon coordinates of lower right cell
+
+    # lat0, lon0 = num2deg_ll(ix0, iy0, izoom)  # lat/lon coordinates of lower left cell
+    # lat1, lon1 = num2deg_ur(ix1, iy1, izoom)  # lat/lon coordinates of lower left cell
+    return [lon0, lon1], [lat0, lat1]
+
+
+# Topo overlay old format
 def make_topo_overlay(
     topo_path,
     npixels=[1200, 800],
@@ -715,6 +886,136 @@ def make_topo_overlay(
     return [lon0, lon1], [lat0, lat1]
 
 
+# Topo overlay new format
+def make_topo_overlay_v2(
+    topo_path,
+    npixels=[1200, 800],
+    lon_range=None,
+    lat_range=None,
+    color_values=None,
+    color_range=None,
+    symmetric=None,
+#    merge=True,
+#    depth=None,
+    quiet=False,
+    file_name=None,
+):
+    """
+    Generates overlay PNG from tiles
+    :param png_path: Output path where the png tiles will be created.
+    :type png_path: str
+    :param option: Option to define the type of tiles to be generated.
+    Options are 'direct', 'floodmap', 'topography'. Defaults to 'direct',
+    in which case the values in *valg* are used directly.
+    :type option: str
+    :param zoom_range: Zoom range for which
+    the png tiles will be created.
+    Defaults to [0, 23].
+    :type zoom_range: list of int
+
+    """
+
+    # Check available levels in index tiles
+    max_zoom = 0
+    levs = fo.list_folders(os.path.join(topo_path, "*"), basename=True)
+    for lev in levs:
+        max_zoom = max(max_zoom, int(lev))
+
+    # Find zoom level that provides sufficient pixels
+    for izoom in range(max_zoom + 1):
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+        if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[1]:
+            # Found sufficient zoom level
+            break
+
+    nx = (ix1 - ix0 + 1) * 256
+    ny = (iy1 - iy0 + 1) * 256
+    zz = np.empty((ny, nx))
+    zz[:] = np.nan
+
+    if not quiet:
+        print("Processing zoom level " + str(izoom))
+
+    for i in range(ix0, ix1 + 1):
+        ifolder = str(i)
+        for j in range(iy0, iy1 + 1):
+            # Read bathy
+            bathy_file = os.path.join(
+                topo_path, str(izoom), ifolder, str(j) + ".png"
+            )
+            if not os.path.exists(bathy_file):
+                # No bathy for this tile, continue
+                continue
+            valt = png2elevation(bathy_file)
+
+            ii0 = (i - ix0) * 256
+            ii1 = ii0 + 256
+            jj0 = (j - iy0) * 256
+            jj1 = jj0 + 256
+            zz[jj0:jj1, ii0:ii1] = valt
+
+    c0 = None
+    c1 = None
+
+    if color_values:
+        # Create empty rgb array
+        zz = zz.flatten()
+        rgb = np.zeros((ny * nx, 4), "uint8")
+        # Determine value based on user-defined ranges
+        for color_value in color_values:
+            inr = np.logical_and(
+                zz >= color_value["lower_value"], zz < color_value["upper_value"]
+            )
+            rgb[inr, 0] = color_value["rgb"][0]
+            rgb[inr, 1] = color_value["rgb"][1]
+            rgb[inr, 2] = color_value["rgb"][2]
+            rgb[inr, 3] = 255
+        im = Image.fromarray(rgb.reshape([ny, nx, 4]))
+
+    else:
+
+        # Two options here:
+        # 1. color_range is None: use min/max of topo
+        #   a) symmetric==None: use min/max of topo
+        #   b) symmetric==abs: use max(abs(min), abs(max))
+        #   c) symmetric==min: use max(abs(min))
+        #   d) symmetric==max: use max(abs(max))
+        # 2. color_range is a list of two values
+
+        if not color_range:
+            if symmetric is None:
+                c0 = np.nanmin(zz)
+                c1 = np.nanmax(zz)
+            elif symmetric == "abs":
+                c0 = -np.nanmax(np.abs(zz))
+                c1 = np.nanmax(np.abs(zz))
+            elif symmetric == "min":
+                c0 = np.nanmin(zz)
+                if c0 > 0.0:
+                    c0 = -10.0
+                c1 = -1 * c0
+            elif symmetric == "max":
+                c1 = np.nanmax(zz)
+                if c1 < 0.0:
+                    c1 = 10.0
+                c0 = -1 * c1
+        else:
+            c0 = color_range[0]
+            c1 = color_range[1]
+
+        zz = (zz - c0) / (c1 - c0)
+        zz[zz < 0.0] = 0.0
+        zz[zz > 1.0] = 1.0
+        im = Image.fromarray(cm.jet(zz, bytes=True))
+
+    if file_name:
+        im.save(file_name)
+
+    lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
+    lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)  # lat/lon coordinates of lower right cell
+    return [lon0, lon1], [lat0, lat1], [c0, c1]
+
 
 def make_topobathy_tiles(
     path,
@@ -761,16 +1062,16 @@ def make_topobathy_tiles(
     transformer_4326_to_3857 = Transformer.from_crs(
         CRS.from_epsg(4326), CRS.from_epsg(3857), always_xy=True
     )
-    dem_crs = []
-    transformer_3857_to_dem = []
 
+    dem_list = []
     for dem_name in dem_names:
-        dem_crs.append(bathymetry_database.get_crs(dem_name))
+        dem = {}
+        dem["dataset"] = bathymetry_database.get_dataset(dem_name)
+        dem["zmin"] = -10000.0
+        dem["zmax"] = 10000.0
+        dem_list.append(dem)
 
-        transformer_3857_to_dem.append(
-            Transformer.from_crs(CRS.from_epsg(3857), dem_crs[-1], always_xy=True)
-        )
-
+    # Loop through zoom levels 
     for izoom in range(zoom_range[0], zoom_range[1] + 1):
         if not quiet:
             print("Processing zoom level " + str(izoom))
@@ -782,63 +1083,42 @@ def make_topobathy_tiles(
         yy = xx[:]
         xv, yv = np.meshgrid(xx, yy)
 
-        ix0, iy0 = deg2num(lat_range[0], lon_range[0], izoom)
-        ix1, iy1 = deg2num(lat_range[1], lon_range[1], izoom)
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
+        # Loop in x direction
         for i in range(ix0, ix1 + 1):
+
             path_okay = False
             zoom_path_i = os.path.join(zoom_path, str(i))
 
+            # Loop in y direction
             for j in range(iy0, iy1 + 1):
-                file_name = os.path.join(zoom_path_i, str(j) + ".dat")
+
+                file_name = os.path.join(zoom_path_i, str(j) + ".png")
 
                 if index_path:
                     # Only make tiles for which there is an index file
                     index_file_name = os.path.join(
-                        index_path, str(izoom), str(i), str(j) + ".dat"
+                        index_path, str(izoom), str(i), str(j) + ".png"
                     )
                     if not os.path.exists(index_file_name):
                         continue
 
-                # Compute lat/lon at ll corner of tile
+                # Compute lat/lon at upper left corner of tile
                 lat, lon = num2deg(i, j, izoom)
 
                 # Convert origin to Global Mercator
                 xo, yo = transformer_4326_to_3857.transform(lon, lat)
 
                 # Tile grid on Global mercator
-                x3857 = xv[:] + xo + 0.5 * dxy
-                y3857 = yv[:] + yo + 0.5 * dxy
-                zg = np.float32(np.full([npix, npix], np.nan))
+                x3857 = xo + xv[:] + 0.5 * dxy
+                y3857 = yo - yv[:] - 0.5 * dxy
 
-                for idem, dem_name in enumerate(dem_names):
-                    # Convert tile grid to crs of DEM
-                    xg, yg = transformer_3857_to_dem[idem].transform(x3857, y3857)
-
-                    # Bounding box of tile grid
-                    if dem_crs[idem].is_geographic:
-                        xybuf = dxy / 50000.0
-                    else:
-                        xybuf = 2 * dxy
-
-                    xl = [np.min(np.min(xg)) - xybuf, np.max(np.max(xg)) + xybuf]
-                    yl = [np.min(np.min(yg)) - xybuf, np.max(np.max(yg)) + xybuf]
-
-                    # Get DEM data (ddb format for now)
-                    x, y, z = bathymetry_database.get_data(
-                        dem_name, xl, yl, max_cell_size=dxy
-                    )
-
-                    if x is np.NaN:
-                        # No data obtained from bathymetry database
-                        continue
-
-                    zg0 = np.float32(interp2(x, y, z, xg, yg))
-                    zg[np.isnan(zg)] = zg0[np.isnan(zg)]
-
-                    if not np.isnan(zg).any():
-                        # No nans left, so no need to load subsequent DEMs
-                        break
+                # Get bathymetry on subgrid from bathymetry database
+                zg = bathymetry_database.get_bathymetry_on_grid(x3857, y3857,
+                                                                CRS.from_epsg(3857),
+                                                                dem_list)
 
                 if np.isnan(zg).all():
                     # only nans in this tile
@@ -853,10 +1133,8 @@ def make_topobathy_tiles(
                         makedir(zoom_path_i)
                         path_okay = True
 
-                # And write indices to file
-                fid = open(file_name, "wb")
-                fid.write(zg)
-                fid.close()
+                # Write to terrarium png format
+                elevation2png(zg, file_name)        
 
 
 def get_bathy_on_tile(
@@ -895,10 +1173,134 @@ def get_bathy_on_tile(
     return zg
 
 
+#### Index to degree (and vice versa) functions
+
+def deg2num(lat_deg, lon_deg, zoom):
+    """Returns column and row index of slippy tile"""
+    lat_rad = math.radians(lat_deg)
+    n = 2**zoom
+    xtile = int((lon_deg + 180.0) / 360.0 * n)
+    ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+    return (xtile, ytile)
+
+def num2deg(xtile, ytile, zoom):
+    """Returns upper left latitude and longitude of slippy tile"""
+    # Return upper left corner of tile
+    n = 2**zoom
+    lon_deg = xtile / n * 360.0 - 180.0
+    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
+    lat_deg = math.degrees(lat_rad)
+    return (lat_deg, lon_deg)
+
+### Old index to degrees functions
+def num2deg_ll(xtile, ytile, zoom):
+    # Return lower left corner of tile (only used in old format)
+    n = 2**zoom
+    lon_deg = xtile / n * 360.0 - 180.0
+    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
+    lat_deg = math.degrees(-lat_rad)
+    return (lat_deg, lon_deg)
+
+
+def num2deg_ur(xtile, ytile, zoom):
+    # Return upper_right corner of tile (only used in old format)
+    n = 2**zoom
+    lon_deg = (xtile + 1) / n * 360.0 - 180.0
+    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * (ytile + 1) / n)))
+    lat_deg = math.degrees(-lat_rad)
+    return (lat_deg, lon_deg)
+
+# def rgba2int(rgba):
+#     """Convert rgba tuple to int"""
+#     r, g, b, a = rgba
+#     return (r * 256**3) + (g * 256**2) + (b * 256) + a
+
+
+### Conversion between elevation and png and vice versa
+# Note: we only use the RGB channels for this (and not the alpha channel)
+
+def png2elevation(png_file):
+    """Convert png to elevation array based on terrarium interpretation"""
+    img = Image.open(png_file)
+    rgb = np.array(img.convert("RGB"))
+    # Convert RGB values to elevation values
+    elevation = (rgb[:,:,0] * 256 + rgb[:,:,1] + rgb[:,:,2] / 256) - 32768.0
+    # where val is less than -32767, set to NaN
+    elevation[elevation<-32767.0] = np.NaN
+    return elevation
+
+def elevation2png(val, png_file):
+    """Convert elevation array to png using terrarium interpretation"""
+    rgb = np.zeros((256 * 256, 3), "uint8")
+    # r, g, b = elevation2rgb(val)
+    val += 32768.0
+    rgb[:, 0] = np.floor(val / 256).flatten()
+    rgb[:, 1] = np.floor(val % 256).flatten()
+    rgb[:, 2] = np.floor((val - np.floor(val)) * 256).flatten()
+    rgb = rgb.reshape([256, 256, 3])
+    # Create PIL Image from RGB values and save as PNG
+    img = Image.fromarray(rgb)
+    img.save(png_file)
+
+# def elevation2rgb(val):
+#     """Convert elevation to rgb tuple"""
+#     val += 32768
+#     r = np.floor(val / 256)
+#     g = np.floor(val % 256)
+#     b = np.floor((val - np.floor(val)) * 256)
+#     return (r, g, b)
+
+# def rgb2elevation(r, g, b):
+#     """Convert rgb tuple to elevation"""
+#     val = (r * 256 + g + b / 256) - 32768
+#     return val
+
+# def rgb2elevation(rgb):
+#     """Convert rgb tuple to elevation"""
+#     val = (rgb[:,:,0] * 256 + rgb[:,:,1] + rgb[:,:,2] / 256) - 32768.0
+#     # where val is less than -32767, set to NaN
+#     val[val<-32767.0] = np.NaN
+#     return val
+
+
+### Conversion between int and png and vice versa
+
+def png2int(png_file):
+    """Convert png to int array"""
+    # Open the PNG image
+    image = Image.open(png_file)
+    rgba = np.array(image.convert("RGBA"))
+    return (rgba[:,:,0] * 256**3) + (rgba[:,:,1] * 256**2) + (rgba[:,:,2] * 256) + rgba[:,:,3]
+
+def int2png(val, png_file):
+    """Convert int array to png"""
+    # Convert index integers to RGBA values
+    rgba = np.zeros((256, 256, 4), "uint8")
+    r = (val // 256**3) % 256
+    g = (val // 256**2) % 256
+    b = (val // 256) % 256
+    a = val % 256
+    rgba[:, :, 0] = r.flatten()
+    rgba[:, :, 1] = g.flatten()
+    rgba[:, :, 2] = b.flatten()
+    rgba[:, :, 3] = a.flatten()
+    # Create PIL Image from RGB values and save as PNG
+    img = Image.fromarray(rgba)
+    img.save(png_file)
+
+# def int2rgba(int_val):
+#     """Convert int to rgba tuple"""
+#     r = (int_val // 256**3) % 256
+#     g = (int_val // 256**2) % 256
+#     b = (int_val // 256) % 256
+#     a = int_val % 256
+#     return (r, g, b, a)
+
+### Util functions
+    
 def makedir(path):
     if not os.path.exists(path):
         os.makedirs(path)
-
 
 def list_files(src):
     file_list = []
@@ -906,9 +1308,7 @@ def list_files(src):
     for item in full_list:
         if os.path.isfile(item):
             file_list.append(item)
-
     return file_list
-
 
 def list_folders(src):
     folder_list = []
@@ -916,9 +1316,7 @@ def list_folders(src):
     for item in full_list:
         if os.path.isdir(item):
             folder_list.append(item)
-
     return folder_list
-
 
 def interp2(x0, y0, z0, x1, y1):
     f = RegularGridInterpolator((y0, x0), z0, bounds_error=False, fill_value=np.nan)
@@ -928,40 +1326,4 @@ def interp2(x0, y0, z0, x1, y1):
     y1 = y1.reshape(sz[0] * sz[1])
     # interpolate
     z1 = f((y1, x1)).reshape(sz)
-
     return z1
-
-
-def deg2num(lat_deg, lon_deg, zoom):
-    lat_rad = math.radians(lat_deg)
-    n = 2**zoom
-    xtile = int((lon_deg + 180.0) / 360.0 * n)
-    ytile = int((1.0 - math.asinh(math.tan(-lat_rad)) / math.pi) / 2.0 * n)
-    return (xtile, ytile)
-
-
-def num2deg(xtile, ytile, zoom):
-    # Return lower left corner of tile
-    n = 2**zoom
-    lon_deg = xtile / n * 360.0 - 180.0
-    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
-    lat_deg = math.degrees(-lat_rad)
-    return (lat_deg, lon_deg)
-
-
-def num2deg_ll(xtile, ytile, zoom):
-    # Return lower left corner of tile
-    n = 2**zoom
-    lon_deg = xtile / n * 360.0 - 180.0
-    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
-    lat_deg = math.degrees(-lat_rad)
-    return (lat_deg, lon_deg)
-
-
-def num2deg_ur(xtile, ytile, zoom):
-    # Return upper_right corner of tile
-    n = 2**zoom
-    lon_deg = (xtile + 1) / n * 360.0 - 180.0
-    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * (ytile + 1) / n)))
-    lat_deg = math.degrees(-lat_rad)
-    return (lat_deg, lon_deg)

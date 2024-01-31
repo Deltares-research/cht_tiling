@@ -8,6 +8,7 @@ Created on Thu May 27 14:51:04 2021
 import glob
 import math
 import os
+import traceback
 
 import numpy as np
 from matplotlib import cm
@@ -87,7 +88,7 @@ def make_png_tiles(
 
     """
 
-    if type(valg) == list:
+    if isinstance(valg, list):
         pass
     else:
         valg = valg.transpose().flatten()
@@ -254,7 +255,7 @@ def make_floodmap_tiles(
 
     """
 
-    if type(valg) == list:
+    if isinstance(valg, list):
         pass
     else:
         valg = valg.transpose().flatten()
@@ -461,6 +462,7 @@ def make_floodmap_tiles(
 
                     im.save(png_file)
 
+
 # Following is function with old format. Should be removed asap.
 def make_floodmap_overlay(
     valg,
@@ -499,7 +501,7 @@ def make_floodmap_overlay(
 
     """
 
-    if type(valg) == list:
+    if isinstance(valg, list):
         pass
     else:
         valg = valg.transpose().flatten()
@@ -657,136 +659,137 @@ def make_floodmap_overlay_v2(
 
     """
 
-    if type(valg) == list:
-        pass
-    else:
-        valg = valg.transpose().flatten()
+    try:
+        if isinstance(valg, list):
+            # Why would this ever be a list ?!
+            print("valg is a list!")
+            pass
+        else:
+            valg = valg.transpose().flatten()
 
-    if not caxis:
-        caxis = []
-        caxis.append(np.nanmin(valg))
-        caxis.append(np.nanmax(valg))
+        if not caxis:
+            caxis = []
+            caxis.append(np.nanmin(valg))
+            caxis.append(np.nanmax(valg))
 
-    # Check available levels in index tiles
-    max_zoom = 0
-    levs = fo.list_folders(os.path.join(index_path, "*"), basename=True)
-    for lev in levs:
-        max_zoom = max(max_zoom, int(lev))
+        # Check available levels in index tiles
+        max_zoom = 0
+        levs = fo.list_folders(os.path.join(index_path, "*"), basename=True)
+        for lev in levs:
+            max_zoom = max(max_zoom, int(lev))
 
-    # Find zoom level that provides sufficient pixels
-    for izoom in range(max_zoom + 1):
-        # ix0, iy0 = deg2num(lat_range[0], lon_range[0], izoom)
-        # ix1, iy1 = deg2num(lat_range[1], lon_range[1], izoom)
-        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
-        if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[1]:
-            # Found sufficient zoom level
-            break
+        # Find zoom level that provides sufficient pixels
+        for izoom in range(max_zoom + 1):
+            # ix0, iy0 = deg2num(lat_range[0], lon_range[0], izoom)
+            # ix1, iy1 = deg2num(lat_range[1], lon_range[1], izoom)
+            ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+            ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+            if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[
+                1
+            ]:
+                # Found sufficient zoom level
+                break
 
-    index_zoom_path = os.path.join(index_path, str(izoom))
+        index_zoom_path = os.path.join(index_path, str(izoom))
 
-    #    dxy = (40075016.686/npix) / 2 ** izoom
-    #    xx = np.linspace(0.0, (256 - 1)*dxy, num=npix)
-    #    yy = xx[:]
-    #    xv, yv = np.meshgrid(xx, yy)
+        nx = (ix1 - ix0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
+        zz = np.empty((ny, nx))
+        zz[:] = np.nan
 
-    nx = (ix1 - ix0 + 1) * 256
-    ny = (iy1 - iy0 + 1) * 256
-    zz = np.empty((ny, nx))
-    zz[:] = np.nan
+        if not quiet:
+            print("Processing zoom level " + str(izoom))
 
-    if not quiet:
-        print("Processing zoom level " + str(izoom))
+        index_zoom_path = os.path.join(index_path, str(izoom))
 
-    index_zoom_path = os.path.join(index_path, str(izoom))
+        for i in range(ix0, ix1 + 1):
+            ifolder = str(i)
+            index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
 
-    for i in range(ix0, ix1 + 1):
-        ifolder = str(i)
-        index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
+            for j in range(iy0, iy1 + 1):
+                index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
 
-        for j in range(iy0, iy1 + 1):
-            index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
-
-            if not os.path.exists(index_file):
-                continue
-
-            ind = png2int(index_file)
-
-            # ind = np.fromfile(index_file, dtype="i4")
-
-            if option == "probabilistic":
-                # This needs to be fixed later on
-                # valg is actually CDF interpolator to obtain probability of water level
-
-                # Read bathy
-                bathy_file = os.path.join(
-                    topo_path, str(izoom), ifolder, str(j) + ".png"
-                )
-
-                if not os.path.exists(bathy_file):
-                    # No bathy for this tile, continue
+                if not os.path.exists(index_file):
                     continue
 
-     
-                zb = np.fromfile(bathy_file, dtype="f4")
-                zs = zb + depth
+                ind = png2int(index_file)
 
-                valt = valg[ind](zs)
-                valt[ind < 0] = np.NaN
+                if option == "probabilistic":
+                    # This needs to be fixed later on
+                    # valg is actually CDF interpolator to obtain probability of water level
 
-            else:
-                # Read bathy
-                bathy_file = os.path.join(
-                    topo_path, str(izoom), ifolder, str(j) + ".png"
+                    # Read bathy
+                    bathy_file = os.path.join(
+                        topo_path, str(izoom), ifolder, str(j) + ".png"
+                    )
+
+                    if not os.path.exists(bathy_file):
+                        # No bathy for this tile, continue
+                        continue
+
+                    zb = np.fromfile(bathy_file, dtype="f4")
+                    zs = zb + depth
+
+                    valt = valg[ind](zs)
+                    valt[ind < 0] = np.NaN
+
+                else:
+                    # Read bathy
+                    bathy_file = os.path.join(
+                        topo_path, str(izoom), ifolder, str(j) + ".png"
+                    )
+                    if not os.path.exists(bathy_file):
+                        # No bathy for this tile, continue
+                        continue
+
+                    zb = png2elevation(bathy_file)
+
+                    valt = valg[ind]
+                    valt = valt - zb
+                    valt[valt < 0.05] = np.NaN
+                    valt[zb < zbmax] = np.NaN
+
+                ii0 = (i - ix0) * 256
+                ii1 = ii0 + 256
+                jj0 = (j - iy0) * 256
+                jj1 = jj0 + 256
+                zz[jj0:jj1, ii0:ii1] = valt
+
+        if color_values:
+            # Create empty rgb array
+            zz = zz.flatten()
+            rgb = np.zeros((ny * nx, 4), "uint8")
+            # Determine value based on user-defined ranges
+            for color_value in color_values:
+                inr = np.logical_and(
+                    zz >= color_value["lower_value"], zz < color_value["upper_value"]
                 )
-                if not os.path.exists(bathy_file):
-                    # No bathy for this tile, continue
-                    continue
+                rgb[inr, 0] = color_value["rgb"][0]
+                rgb[inr, 1] = color_value["rgb"][1]
+                rgb[inr, 2] = color_value["rgb"][2]
+                rgb[inr, 3] = 255
+            im = Image.fromarray(rgb.reshape([ny, nx, 4]))
 
-                zb = png2elevation(bathy_file)
+        else:
+            zz = (zz - caxis[0]) / (caxis[1] - caxis[0])
+            zz[zz < 0.0] = 0.0
+            zz[zz > 1.0] = 1.0
+            im = Image.fromarray(cm.jet(zz, bytes=True))
 
-                valt = valg[ind]
-                valt = valt - zb
-                valt[valt < 0.05] = np.NaN
-                valt[zb < zbmax] = np.NaN
+        if file_name:
+            im.save(file_name)
 
-            ii0 = (i - ix0) * 256
-            ii1 = ii0 + 256
-            jj0 = (j - iy0) * 256
-            jj1 = jj0 + 256
-            # zz[jj0:jj1, ii0:ii1] = np.flipud(valt.reshape([256, 256]))
-            zz[jj0:jj1, ii0:ii1] = valt
+        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(
+            ix1 + 1, iy1 + 1, izoom
+        )
 
-    if color_values:
-        # Create empty rgb array
-        zz = zz.flatten()
-        rgb = np.zeros((ny * nx, 4), "uint8")
-        # Determine value based on user-defined ranges
-        for color_value in color_values:
-            inr = np.logical_and(
-                zz >= color_value["lower_value"], zz < color_value["upper_value"]
-            )
-            rgb[inr, 0] = color_value["rgb"][0]
-            rgb[inr, 1] = color_value["rgb"][1]
-            rgb[inr, 2] = color_value["rgb"][2]
-            rgb[inr, 3] = 255
-        im = Image.fromarray(rgb.reshape([ny, nx, 4]))
+        return [lon0, lon1], [lat0, lat1]
 
-    else:
-        zz = (zz - caxis[0]) / (caxis[1] - caxis[0])
-        zz[zz < 0.0] = 0.0
-        zz[zz > 1.0] = 1.0
-        im = Image.fromarray(cm.jet(zz, bytes=True))
-
-    if file_name:
-        im.save(file_name)
-
-    lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
-    lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)  # lat/lon coordinates of lower right cell
-
-    # lat0, lon0 = num2deg_ll(ix0, iy0, izoom)  # lat/lon coordinates of lower left cell
-    # lat1, lon1 = num2deg_ur(ix1, iy1, izoom)  # lat/lon coordinates of lower left cell
-    return [lon0, lon1], [lat0, lat1]
+    except Exception as e:
+        print(e)
+        traceback.print_exc()
+        return None, None
 
 
 # Topo overlay old format
@@ -797,8 +800,8 @@ def make_topo_overlay(
     lat_range=None,
     color_values=None,
     caxis=None,
-#    merge=True,
-#    depth=None,
+    #    merge=True,
+    #    depth=None,
     quiet=False,
     file_name=None,
 ):
@@ -843,9 +846,7 @@ def make_topo_overlay(
         ifolder = str(i)
         for j in range(iy0, iy1 + 1):
             # Read bathy
-            bathy_file = os.path.join(
-                topo_path, str(izoom), ifolder, str(j) + ".dat"
-            )
+            bathy_file = os.path.join(topo_path, str(izoom), ifolder, str(j) + ".dat")
             if not os.path.exists(bathy_file):
                 # No bathy for this tile, continue
                 continue
@@ -893,10 +894,11 @@ def make_topo_overlay_v2(
     lon_range=None,
     lat_range=None,
     color_values=None,
+    color_map="jet",
     color_range=None,
-    symmetric=None,
-#    merge=True,
-#    depth=None,
+    color_scale_auto=False,
+    color_scale_symmetric=True,
+    color_scale_symmetric_side="min",
     quiet=False,
     file_name=None,
 ):
@@ -915,106 +917,122 @@ def make_topo_overlay_v2(
 
     """
 
-    # Check available levels in index tiles
-    max_zoom = 0
-    levs = fo.list_folders(os.path.join(topo_path, "*"), basename=True)
-    for lev in levs:
-        max_zoom = max(max_zoom, int(lev))
+    try:
+        # Check available levels in index tiles
+        max_zoom = 0
+        levs = fo.list_folders(os.path.join(topo_path, "*"), basename=True)
+        for lev in levs:
+            max_zoom = max(max_zoom, int(lev))
 
-    # Find zoom level that provides sufficient pixels
-    for izoom in range(max_zoom + 1):
-        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
-        if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[1]:
-            # Found sufficient zoom level
-            break
+        # Find zoom level that provides sufficient pixels
+        for izoom in range(max_zoom + 1):
+            ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+            ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+            if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[
+                1
+            ]:
+                # Found sufficient zoom level
+                break
 
-    nx = (ix1 - ix0 + 1) * 256
-    ny = (iy1 - iy0 + 1) * 256
-    zz = np.empty((ny, nx))
-    zz[:] = np.nan
+        nx = (ix1 - ix0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
+        zz = np.empty((ny, nx))
+        zz[:] = np.nan
 
-    if not quiet:
-        print("Processing zoom level " + str(izoom))
+        if not quiet:
+            print("Processing zoom level " + str(izoom))
 
-    for i in range(ix0, ix1 + 1):
-        ifolder = str(i)
-        for j in range(iy0, iy1 + 1):
-            # Read bathy
-            bathy_file = os.path.join(
-                topo_path, str(izoom), ifolder, str(j) + ".png"
-            )
-            if not os.path.exists(bathy_file):
-                # No bathy for this tile, continue
-                continue
-            valt = png2elevation(bathy_file)
+        for i in range(ix0, ix1 + 1):
+            ifolder = str(i)
+            for j in range(iy0, iy1 + 1):
+                # Read bathy
+                bathy_file = os.path.join(
+                    topo_path, str(izoom), ifolder, str(j) + ".png"
+                )
+                if not os.path.exists(bathy_file):
+                    # No bathy for this tile, continue
+                    continue
+                valt = png2elevation(bathy_file)
 
-            ii0 = (i - ix0) * 256
-            ii1 = ii0 + 256
-            jj0 = (j - iy0) * 256
-            jj1 = jj0 + 256
-            zz[jj0:jj1, ii0:ii1] = valt
+                ii0 = (i - ix0) * 256
+                ii1 = ii0 + 256
+                jj0 = (j - iy0) * 256
+                jj1 = jj0 + 256
+                zz[jj0:jj1, ii0:ii1] = valt
 
-    c0 = None
-    c1 = None
+        c0 = None
+        c1 = None
 
-    if color_values:
-        # Create empty rgb array
-        zz = zz.flatten()
-        rgb = np.zeros((ny * nx, 4), "uint8")
-        # Determine value based on user-defined ranges
-        for color_value in color_values:
-            inr = np.logical_and(
-                zz >= color_value["lower_value"], zz < color_value["upper_value"]
-            )
-            rgb[inr, 0] = color_value["rgb"][0]
-            rgb[inr, 1] = color_value["rgb"][1]
-            rgb[inr, 2] = color_value["rgb"][2]
-            rgb[inr, 3] = 255
-        im = Image.fromarray(rgb.reshape([ny, nx, 4]))
+        if color_values:
+            # Create empty rgb array
+            zz = zz.flatten()
+            rgb = np.zeros((ny * nx, 4), "uint8")
+            # Determine value based on user-defined ranges
+            for color_value in color_values:
+                inr = np.logical_and(
+                    zz >= color_value["lower_value"], zz < color_value["upper_value"]
+                )
+                rgb[inr, 0] = color_value["rgb"][0]
+                rgb[inr, 1] = color_value["rgb"][1]
+                rgb[inr, 2] = color_value["rgb"][2]
+                rgb[inr, 3] = 255
+            im = Image.fromarray(rgb.reshape([ny, nx, 4]))
 
-    else:
-
-        # Two options here:
-        # 1. color_range is None: use min/max of topo
-        #   a) symmetric==None: use min/max of topo
-        #   b) symmetric==abs: use max(abs(min), abs(max))
-        #   c) symmetric==min: use max(abs(min))
-        #   d) symmetric==max: use max(abs(max))
-        # 2. color_range is a list of two values
-
-        if not color_range:
-            if symmetric is None:
-                c0 = np.nanmin(zz)
-                c1 = np.nanmax(zz)
-            elif symmetric == "abs":
-                c0 = -np.nanmax(np.abs(zz))
-                c1 = np.nanmax(np.abs(zz))
-            elif symmetric == "min":
-                c0 = np.nanmin(zz)
-                if c0 > 0.0:
-                    c0 = -10.0
-                c1 = -1 * c0
-            elif symmetric == "max":
-                c1 = np.nanmax(zz)
-                if c1 < 0.0:
-                    c1 = 10.0
-                c0 = -1 * c1
         else:
-            c0 = color_range[0]
-            c1 = color_range[1]
+            # Two options here:
+            # 1. color_scale_auto = True
+            #   if color_scale_symmetric = True:
+            #       a) color_scale_side = "min": use max(abs(min))
+            #       b) color_scale_side = "max": use max(abs(max))
+            #       c) color_scale_side = "both": use max(abs(min), abs(max))
+            #   else:
+            #       use min/max of topo
+            # 2. color_range is a list of two values
 
-        zz = (zz - c0) / (c1 - c0)
-        zz[zz < 0.0] = 0.0
-        zz[zz > 1.0] = 1.0
-        im = Image.fromarray(cm.jet(zz, bytes=True))
+            if color_scale_auto:
+                if color_scale_symmetric:
+                    if color_scale_symmetric_side == "min":
+                        c0 = np.nanmin(zz)
+                        if c0 > 0.0:
+                            c0 = -10.0
+                        c1 = -1 * c0
+                    elif color_scale_symmetric_side == "max":
+                        c1 = np.nanmax(zz)
+                        if c1 < 0.0:
+                            c1 = 10.0
+                        c0 = -1 * c1
+                    else:
+                        c0 = -np.nanmax(np.abs(zz))
+                        c1 = np.nanmax(np.abs(zz))
 
-    if file_name:
-        im.save(file_name)
+                else:
+                    c0 = np.nanmin(zz)
+                    c1 = np.nanmax(zz)
 
-    lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
-    lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)  # lat/lon coordinates of lower right cell
-    return [lon0, lon1], [lat0, lat1], [c0, c1]
+            else:
+                c0 = color_range[0]
+                c1 = color_range[1]
+
+            zz = (zz - c0) / (c1 - c0)
+            zz[zz < 0.0] = 0.0
+            zz[zz > 1.0] = 1.0
+
+            cmap = cm.get_cmap(color_map)
+            im = Image.fromarray(cmap(zz, bytes=True))
+
+        if file_name:
+            im.save(file_name)
+
+        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(
+            ix1 + 1, iy1 + 1, izoom
+        )  # lat/lon coordinates of lower right cell
+        return [lon0, lon1], [lat0, lat1], [c0, c1]
+
+    except Exception as e:
+        print(e)
+        traceback.print_exc()
+        return None, None, None
 
 
 def make_topobathy_tiles(
@@ -1046,7 +1064,8 @@ def make_topobathy_tiles(
     """
 
     from cht.bathymetry.bathymetry_database import BathymetryDatabase
-    from cht.misc.misc_tools import interp2
+
+    # from cht.misc.misc_tools import interp2
 
     bathymetry_database = BathymetryDatabase(None)
     bathymetry_database.initialize(bathymetry_database_path)
@@ -1071,7 +1090,7 @@ def make_topobathy_tiles(
         dem["zmax"] = 10000.0
         dem_list.append(dem)
 
-    # Loop through zoom levels 
+    # Loop through zoom levels
     for izoom in range(zoom_range[0], zoom_range[1] + 1):
         if not quiet:
             print("Processing zoom level " + str(izoom))
@@ -1088,13 +1107,11 @@ def make_topobathy_tiles(
 
         # Loop in x direction
         for i in range(ix0, ix1 + 1):
-
             path_okay = False
             zoom_path_i = os.path.join(zoom_path, str(i))
 
             # Loop in y direction
             for j in range(iy0, iy1 + 1):
-
                 file_name = os.path.join(zoom_path_i, str(j) + ".png")
 
                 if index_path:
@@ -1116,9 +1133,9 @@ def make_topobathy_tiles(
                 y3857 = yo - yv[:] - 0.5 * dxy
 
                 # Get bathymetry on subgrid from bathymetry database
-                zg = bathymetry_database.get_bathymetry_on_grid(x3857, y3857,
-                                                                CRS.from_epsg(3857),
-                                                                dem_list)
+                zg = bathymetry_database.get_bathymetry_on_grid(
+                    x3857, y3857, CRS.from_epsg(3857), dem_list
+                )
 
                 if np.isnan(zg).all():
                     # only nans in this tile
@@ -1134,7 +1151,7 @@ def make_topobathy_tiles(
                         path_okay = True
 
                 # Write to terrarium png format
-                elevation2png(zg, file_name)        
+                elevation2png(zg, file_name)
 
 
 def get_bathy_on_tile(
@@ -1175,6 +1192,7 @@ def get_bathy_on_tile(
 
 #### Index to degree (and vice versa) functions
 
+
 def deg2num(lat_deg, lon_deg, zoom):
     """Returns column and row index of slippy tile"""
     lat_rad = math.radians(lat_deg)
@@ -1182,6 +1200,7 @@ def deg2num(lat_deg, lon_deg, zoom):
     xtile = int((lon_deg + 180.0) / 360.0 * n)
     ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
     return (xtile, ytile)
+
 
 def num2deg(xtile, ytile, zoom):
     """Returns upper left latitude and longitude of slippy tile"""
@@ -1191,6 +1210,7 @@ def num2deg(xtile, ytile, zoom):
     lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
     lat_deg = math.degrees(lat_rad)
     return (lat_deg, lon_deg)
+
 
 ### Old index to degrees functions
 def num2deg_ll(xtile, ytile, zoom):
@@ -1210,6 +1230,7 @@ def num2deg_ur(xtile, ytile, zoom):
     lat_deg = math.degrees(-lat_rad)
     return (lat_deg, lon_deg)
 
+
 # def rgba2int(rgba):
 #     """Convert rgba tuple to int"""
 #     r, g, b, a = rgba
@@ -1219,15 +1240,17 @@ def num2deg_ur(xtile, ytile, zoom):
 ### Conversion between elevation and png and vice versa
 # Note: we only use the RGB channels for this (and not the alpha channel)
 
+
 def png2elevation(png_file):
     """Convert png to elevation array based on terrarium interpretation"""
     img = Image.open(png_file)
     rgb = np.array(img.convert("RGB"))
     # Convert RGB values to elevation values
-    elevation = (rgb[:,:,0] * 256 + rgb[:,:,1] + rgb[:,:,2] / 256) - 32768.0
+    elevation = (rgb[:, :, 0] * 256 + rgb[:, :, 1] + rgb[:, :, 2] / 256) - 32768.0
     # where val is less than -32767, set to NaN
-    elevation[elevation<-32767.0] = np.NaN
+    elevation[elevation < -32767.0] = np.NaN
     return elevation
+
 
 def elevation2png(val, png_file):
     """Convert elevation array to png using terrarium interpretation"""
@@ -1241,6 +1264,7 @@ def elevation2png(val, png_file):
     # Create PIL Image from RGB values and save as PNG
     img = Image.fromarray(rgb)
     img.save(png_file)
+
 
 # def elevation2rgb(val):
 #     """Convert elevation to rgb tuple"""
@@ -1265,12 +1289,19 @@ def elevation2png(val, png_file):
 
 ### Conversion between int and png and vice versa
 
+
 def png2int(png_file):
     """Convert png to int array"""
     # Open the PNG image
     image = Image.open(png_file)
     rgba = np.array(image.convert("RGBA"))
-    return (rgba[:,:,0] * 256**3) + (rgba[:,:,1] * 256**2) + (rgba[:,:,2] * 256) + rgba[:,:,3]
+    return (
+        (rgba[:, :, 0] * 256**3)
+        + (rgba[:, :, 1] * 256**2)
+        + (rgba[:, :, 2] * 256)
+        + rgba[:, :, 3]
+    )
+
 
 def int2png(val, png_file):
     """Convert int array to png"""
@@ -1288,6 +1319,7 @@ def int2png(val, png_file):
     img = Image.fromarray(rgba)
     img.save(png_file)
 
+
 # def int2rgba(int_val):
 #     """Convert int to rgba tuple"""
 #     r = (int_val // 256**3) % 256
@@ -1297,10 +1329,12 @@ def int2png(val, png_file):
 #     return (r, g, b, a)
 
 ### Util functions
-    
+
+
 def makedir(path):
     if not os.path.exists(path):
         os.makedirs(path)
+
 
 def list_files(src):
     file_list = []
@@ -1310,6 +1344,7 @@ def list_files(src):
             file_list.append(item)
     return file_list
 
+
 def list_folders(src):
     folder_list = []
     full_list = glob.glob(src)
@@ -1317,6 +1352,7 @@ def list_folders(src):
         if os.path.isdir(item):
             folder_list.append(item)
     return folder_list
+
 
 def interp2(x0, y0, z0, x1, y1):
     f = RegularGridInterpolator((y0, x0), z0, bounds_error=False, fill_value=np.nan)

@@ -787,9 +787,7 @@ def make_floodmap_overlay_v2(
             im.save(file_name)
 
         lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
-        lat0, lon1 = num2deg(
-            ix1 + 1, iy1 + 1, izoom
-        )
+        lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)
 
         return [lon0, lon1], [lat0, lat1]
 

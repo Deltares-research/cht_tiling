@@ -4,11 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cht_tiling"
-#description = "Download tide gauge observation data"
+description = "CHT Tiling is a package to create and use slippy tiles (xyz)"
 readme = "README.md"
 authors = [
-    { name = "Maarten van Ormondt", email = "maarten.vanormondt@deltares.nl"},
-    { name = "Sarwan Peiter", email = "Sarwan.Peiter@deltares.nl" },
+    { name = "Maarten van Ormondt", email = "maarten.vanormondt@deltares.nl"}
 ]
 license = { text = "MIT" }
 classifiers = [
@@ -36,5 +35,5 @@ include = ["cht_tiling"]
 
 # TODO
 [project.urls]
-Source = "https://github.com/Deltares/cht_tiling"
+Source = "https://github.com/Deltares-research/cht_tiling"
 #Documentation = "https://deltares.github.io/Ribasim"

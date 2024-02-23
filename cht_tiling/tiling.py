@@ -15,6 +15,7 @@ from matplotlib import cm
 from PIL import Image
 from pyproj import CRS, Transformer
 from scipy.interpolate import RegularGridInterpolator
+from matplotlib.colors import LightSource
 
 import cht_tiling.fileops as fo
 
@@ -904,6 +905,10 @@ def make_topo_overlay_v2(
     color_scale_auto=False,
     color_scale_symmetric=True,
     color_scale_symmetric_side="min",
+    hillshading=True,
+    hillshading_azimuth=315,
+    hillshading_altitude=30,
+    hillshading_exaggeration=10.0,
     quiet=False,
     file_name=None,
 ):
@@ -929,15 +934,10 @@ def make_topo_overlay_v2(
         for lev in levs:
             max_zoom = max(max_zoom, int(lev))
 
-        # Find zoom level that provides sufficient pixels
-        for izoom in range(max_zoom + 1):
-            ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-            ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
-            if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[
-                1
-            ]:
-                # Found sufficient zoom level
-                break
+        izoom = get_zoom_level(npixels, lon_range, lat_range, max_zoom)
+
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         nx = (ix1 - ix0 + 1) * 256
         ny = (iy1 - iy0 + 1) * 256
@@ -984,6 +984,7 @@ def make_topo_overlay_v2(
             im = Image.fromarray(rgb.reshape([ny, nx, 4]))
 
         else:
+
             # Two options here:
             # 1. color_scale_auto = True
             #   if color_scale_symmetric = True:
@@ -1018,12 +1019,35 @@ def make_topo_overlay_v2(
                 c0 = color_range[0]
                 c1 = color_range[1]
 
-            zz = (zz - c0) / (c1 - c0)
-            zz[zz < 0.0] = 0.0
-            zz[zz > 1.0] = 1.0
-
             cmap = cm.get_cmap(color_map)
-            im = Image.fromarray(cmap(zz, bytes=True))
+
+            if hillshading:
+                ls = LightSource(azdeg=hillshading_azimuth, altdeg=hillshading_altitude)
+                # Compute pixel size in meters
+                dxy = 156543.03 / 2**izoom
+                rgb = (
+                    ls.shade(
+                        zz,
+                        cmap,
+                        vmin=c0,
+                        vmax=c1,
+                        dx=dxy,
+                        dy=dxy,
+                        vert_exag=hillshading_exaggeration,
+                        blend_mode="soft",
+                    )
+                    * 255
+                )
+                # rgb = rgb * 255
+                # rgb = rgb.astype(np.uint8)
+                im = Image.fromarray(rgb.astype(np.uint8))
+
+            else:
+
+                zz = (zz - c0) / (c1 - c0)
+                zz[zz < 0.0] = 0.0
+                zz[zz > 1.0] = 1.0
+                im = Image.fromarray(cmap(zz, bytes=True))
 
         if file_name:
             im.save(file_name)
@@ -1368,3 +1392,20 @@ def interp2(x0, y0, z0, x1, y1):
     # interpolate
     z1 = f((y1, x1)).reshape(sz)
     return z1
+
+
+def get_zoom_level(npixels, lon_range, lat_range, max_zoom):
+    # Get required zoom level
+    # lat = np.pi * (lat_range[0] + lat_range[1]) / 360
+    # dx = (lon_range[1] - lon_range[0]) * 111111 * np.cos(lat) / npixels[0]
+    dxr = (lat_range[1] - lat_range[0]) * 111111 / npixels[1]
+    # dxr = min(dx, dy)
+    # Make numpy array with pixel size in meters for all zoom levels
+    dxy = 156543.03 / 2 ** np.arange(max_zoom + 1)
+    # Find zoom level that provides sufficient pixels
+    izoom = np.where(dxy < dxr)[0]
+    if len(izoom) == 0:
+        izoom = max_zoom
+    else:
+        izoom = izoom[0]
+    return izoom

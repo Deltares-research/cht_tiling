@@ -11,7 +11,7 @@ import os
 import traceback
 
 import numpy as np
-from matplotlib import cm
+from matplotlib import (cm, colormaps)
 from PIL import Image
 from pyproj import CRS, Transformer
 from scipy.interpolate import RegularGridInterpolator
@@ -1019,8 +1019,8 @@ def make_topo_overlay_v2(
                 c0 = color_range[0]
                 c1 = color_range[1]
 
-            cmap = cm.get_cmap(color_map)
-
+            cmap = colormaps.get_cmap(color_map)
+            
             if hillshading:
                 ls = LightSource(azdeg=hillshading_azimuth, altdeg=hillshading_altitude)
                 # Compute pixel size in meters

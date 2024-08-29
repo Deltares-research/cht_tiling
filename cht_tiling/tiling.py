@@ -1092,9 +1092,9 @@ def make_topobathy_tiles(
 
     """
 
-    from cht.bathymetry.bathymetry_database import BathymetryDatabase
+    from cht_bathymetry.bathymetry_database import BathymetryDatabase
 
-    # from cht.misc.misc_tools import interp2
+    # from cht_utils.misc_tools import interp2
 
     bathymetry_database = BathymetryDatabase(None)
     bathymetry_database.initialize(bathymetry_database_path)

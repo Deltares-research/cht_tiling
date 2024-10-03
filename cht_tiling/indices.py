@@ -3,26 +3,43 @@ import math
 import numpy as np
 from pyproj import CRS, Transformer
 
+from .webviewer import write_html
 from .utils import deg2num
 from .utils import num2deg
 from .utils import binary_search
 from .utils import makedir
 from .utils import int2png
 
-def make_index_tiles(grid, path, zoom_range=None, format="png"):
-    # The grid must be an XU grid
+def make_index_tiles(grid, path, zoom_range=None, format="png", webviewer=False):
+    # The grid must be an XU grid !
+
     # Test to see whether this grid is:
-    # 1. A regular grid
-    # 2. A QuadTree grid
+    # 1. A QuadTree grid
+    # 2. A regular grid
     # 3. An irregular grid (a la FM)
 
     if not zoom_range:
         # Set default zoom range
         zoom_range = [0, 13]
 
-    # Assume for now a quadtree grid
-    make_index_tiles_quadtree(grid, path, zoom_range, format)
+    # Check if grid has a "level" data array
+    if "level" in grid:
+        # Must be a quadtree grid
+        make_index_tiles_quadtree(grid, path, zoom_range, format)
 
+    # elif "n" in grid and "m" in grid:
+    #     # Must be a regular grid
+    #     make_index_tiles_regular(grid, path, zoom_range, format)
+
+    # elif check for FM:
+    #     pass     
+
+    else:
+        raise ValueError("Grid type not recognized by make_index_tiles")
+
+    if webviewer:
+        # Make webviewer
+        write_html(os.path.join(path, "index.html"), max_native_zoom=zoom_range[1])
 
 def make_index_tiles_quadtree(grid, path, zoom_range, format):
         
@@ -52,10 +69,13 @@ def make_index_tiles_quadtree(grid, path, zoom_range, format):
     bnds = grid.grid.bounds
 
     xmin = bnds[0] - 2*dx
-    xmax = bnds[1] + 2*dx
-    ymin = bnds[2] - 2*dy
+    xmax = bnds[2] + 2*dx
+    ymin = bnds[1] - 2*dy
     ymax = bnds[3] + 2*dy
-    transformer = Transformer.from_crs(grid.grid.crs,
+
+    crs = grid.crs.values
+
+    transformer = Transformer.from_crs(crs,
                                        CRS.from_epsg(4326),
                                        always_xy=True)
     lon_min, lat_min = transformer.transform(xmin, ymin)
@@ -64,11 +84,11 @@ def make_index_tiles_quadtree(grid, path, zoom_range, format):
     lat_range = [lat_min, lat_max]        
     
     transformer_a = Transformer.from_crs(CRS.from_epsg(4326),
-                                            CRS.from_epsg(3857),
-                                            always_xy=True)
+                                         CRS.from_epsg(3857),
+                                         always_xy=True)
     transformer_b = Transformer.from_crs(CRS.from_epsg(3857),
-                                            grid.grid.crs,
-                                            always_xy=True)
+                                         crs,
+                                         always_xy=True)
     
     i0_lev = []
     i1_lev = []
@@ -102,8 +122,8 @@ def make_index_tiles_quadtree(grid, path, zoom_range, format):
     
         ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
         ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
-        ix1 = ix1 + 1
-        iy1 = iy1 + 1
+        # ix1 = ix1 + 1
+        # iy1 = iy1 + 1
     
         for i in range(ix0, ix1 + 1):
         
@@ -169,6 +189,6 @@ def make_index_tiles_quadtree(grid, path, zoom_range, format):
                             makedir(zoom_path_i)
                             path_okay = True                            
                     # And write indices to file
-                    print(file_name)        
+                    # print(file_name)        
                     int2png(indx, file_name)
 

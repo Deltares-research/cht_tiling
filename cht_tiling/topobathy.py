@@ -3,6 +3,7 @@ import numpy as np
 from pyproj import CRS, Transformer
 import time
 import toml
+from multiprocessing.pool import ThreadPool
 
 from cht_utils.misc_tools import interp2
 
@@ -12,6 +13,93 @@ from .utils import num2deg
 from .utils import makedir
 from .utils import elevation2png
 from .utils import png2elevation
+
+def make_lower_level_tile(zoom_path_i,
+                          zoom_path_higher,
+                          i,
+                          j,
+                          npix,
+                          encoder,
+                          encoder_vmin,
+                          encoder_vmax,
+                          compress_level):
+
+    # Get the indices of the tiles in the higher zoom level
+    i00, j00 = 2 * i, 2 * j         # upper left
+    i10, j10 = 2 * i, 2 * j + 1     # lower left
+    i01, j01 = 2 * i + 1, 2 * j     # upper right
+    i11, j11 = 2 * i + 1, 2 * j + 1 # lower right
+
+    # Create empty array of NaN to store the elevation data from the higher zoom level
+    zg512 = np.zeros((npix * 2, npix * 2))
+    zg512[:] = np.nan
+
+    # Create empty array of NaN of 4*npix*npix to store the 2-strid elevation data from higher zoom level
+    zg4 = np.zeros((4, npix, npix))
+    zg4[:] = np.nan
+
+    okay = False
+
+    # Get the file names of the tiles in the higher zoom level
+    # Upper left
+    file_name = os.path.join(zoom_path_higher, str(i00), str(j00) + ".png")
+    if os.path.exists(file_name):
+        zgh = png2elevation(file_name,
+                            encoder=encoder,
+                            encoder_vmin=encoder_vmin,
+                            encoder_vmax=encoder_vmax)
+        zg512[0:npix, 0:npix] = zgh
+        okay = True
+    # Lower left    
+    file_name = os.path.join(zoom_path_higher, str(i10), str(j10) + ".png")
+    if os.path.exists(file_name):
+        zgh = png2elevation(file_name,
+                            encoder=encoder,
+                            encoder_vmin=encoder_vmin,
+                            encoder_vmax=encoder_vmax)
+        zg512[npix:, 0:npix] = zgh
+        okay = True
+    # Upper right    
+    file_name = os.path.join(zoom_path_higher, str(i01), str(j01) + ".png")
+    if os.path.exists(file_name):
+        zgh = png2elevation(file_name,
+                            encoder=encoder,
+                            encoder_vmin=encoder_vmin,
+                            encoder_vmax=encoder_vmax)
+        zg512[0:npix, npix:] = zgh
+        okay = True
+    # Lower right    
+    file_name = os.path.join(zoom_path_higher, str(i11), str(j11) + ".png")
+    if os.path.exists(file_name):
+        zgh = png2elevation(file_name,
+                            encoder=encoder,
+                            encoder_vmin=encoder_vmin,
+                            encoder_vmax=encoder_vmax)
+        zg512[npix:, npix:] = zgh
+        okay = True
+
+    if not okay:
+        # No tiles in higher zoom level, so continue
+        return
+
+    # Compute average of 4 tiles in higher zoom level
+    # Data from zg512 with stride 2
+    zg4[0,:,:] = zg512[0:npix * 2:2, 0:npix * 2:2]
+    zg4[1,:,:] = zg512[1:npix * 2:2, 0:npix * 2:2]
+    zg4[2,:,:] = zg512[0:npix * 2:2, 1:npix * 2:2]
+    zg4[3,:,:] = zg512[1:npix * 2:2, 1:npix * 2:2]
+
+    # Compute average of 4 tiles
+    zg = np.nanmean(zg4, axis=0)
+
+    # Write to terrarium png format
+    file_name = os.path.join(zoom_path_i, str(j) + ".png")
+    elevation2png(zg, file_name,
+                    encoder=encoder,
+                    encoder_vmin=encoder_vmin,
+                    encoder_vmax=encoder_vmax,                                 
+                    compress_level=compress_level)
+
 
 def make_topobathy_tiles(
     path,
@@ -136,6 +224,9 @@ def make_topobathy_tiles(
             # Loop in y direction
             for j in range(iy0, iy1 + 1):
 
+                # Create highest zoom level tile
+                
+
                 if index_path:
                     # Only make tiles for which there is an index file
                     index_file_name = os.path.join(
@@ -243,83 +334,16 @@ def make_topobathy_tiles(
                         path_okay = True
 
                 # Loop in y direction
-                for j in range(iy0, iy1 + 1):
-
-                    # Get the indices of the tiles in the higher zoom level
-                    i00, j00 = 2 * i, 2 * j         # upper left
-                    i10, j10 = 2 * i, 2 * j + 1     # lower left
-                    i01, j01 = 2 * i + 1, 2 * j     # upper right
-                    i11, j11 = 2 * i + 1, 2 * j + 1 # lower right
-
-                    # Create empty array of NaN to store the elevation data from the higher zoom level
-                    zg512 = np.zeros((npix * 2, npix * 2))
-                    zg512[:] = np.nan
-
-                    # Create empty array of NaN of 4*npix*npix to store the 2-strid elevation data from higher zoom level
-                    zg4 = np.zeros((4, npix, npix))
-                    zg4[:] = np.nan
-
-                    okay = False
-
-                    # Get the file names of the tiles in the higher zoom level
-                    # Upper left
-                    file_name = os.path.join(zoom_path_higher, str(i00), str(j00) + ".png")
-                    if os.path.exists(file_name):
-                        zgh = png2elevation(file_name,
-                                            encoder=encoder,
-                                            encoder_vmin=encoder_vmin,
-                                            encoder_vmax=encoder_vmax)
-                        zg512[0:npix, 0:npix] = zgh
-                        okay = True
-                    # Lower left    
-                    file_name = os.path.join(zoom_path_higher, str(i10), str(j10) + ".png")
-                    if os.path.exists(file_name):
-                        zgh = png2elevation(file_name,
-                                            encoder=encoder,
-                                            encoder_vmin=encoder_vmin,
-                                            encoder_vmax=encoder_vmax)
-                        zg512[npix:, 0:npix] = zgh
-                        okay = True
-                    # Upper right    
-                    file_name = os.path.join(zoom_path_higher, str(i01), str(j01) + ".png")
-                    if os.path.exists(file_name):
-                        zgh = png2elevation(file_name,
-                                            encoder=encoder,
-                                            encoder_vmin=encoder_vmin,
-                                            encoder_vmax=encoder_vmax)
-                        zg512[0:npix, npix:] = zgh
-                        okay = True
-                    # Lower right    
-                    file_name = os.path.join(zoom_path_higher, str(i11), str(j11) + ".png")
-                    if os.path.exists(file_name):
-                        zgh = png2elevation(file_name,
-                                            encoder=encoder,
-                                            encoder_vmin=encoder_vmin,
-                                            encoder_vmax=encoder_vmax)
-                        zg512[npix:, npix:] = zgh
-                        okay = True
-
-                    if not okay:
-                        # No tiles in higher zoom level, so continue
-                        continue
-
-                    # Compute average of 4 tiles in higher zoom level
-                    # Data from zg512 with stride 2
-                    zg4[0,:,:] = zg512[0:npix * 2:2, 0:npix * 2:2]
-                    zg4[1,:,:] = zg512[1:npix * 2:2, 0:npix * 2:2]
-                    zg4[2,:,:] = zg512[0:npix * 2:2, 1:npix * 2:2]
-                    zg4[3,:,:] = zg512[1:npix * 2:2, 1:npix * 2:2]
-
-                    # Compute average of 4 tiles
-                    zg = np.nanmean(zg4, axis=0)
-
-                    # Write to terrarium png format
-                    file_name = os.path.join(zoom_path_i, str(j) + ".png")
-                    elevation2png(zg, file_name,
-                                  encoder=encoder,
-                                  encoder_vmin=encoder_vmin,
-                                  encoder_vmax=encoder_vmax,                                 
-                                  compress_level=compress_level)
+                with ThreadPool() as pool:
+                    pool.starmap(make_lower_level_tile, [(zoom_path_i,
+                          zoom_path_higher,
+                          i,
+                          j,
+                          npix,
+                          encoder,
+                          encoder_vmin,
+                          encoder_vmax,
+                          compress_level) for j in range(iy0, iy1 + 1)])
 
             t1 = time.time()
 

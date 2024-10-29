@@ -48,12 +48,11 @@ class TiledWebMap:
             self.availability_exists = True
         else:
             self.availability_exists = False
-
-            # Check available levels in index tiles
-            self.max_zoom = 0
-            levs = list_folders(os.path.join(self.path, "*"), basename=True)
-            for lev in levs:
-                self.max_zoom = max(self.max_zoom, int(lev))
+            # # Check available levels in index tiles
+            # self.max_zoom = 0
+            # levs = list_folders(os.path.join(self.path, "*"), basename=True)
+            # for lev in levs:
+            #     self.max_zoom = max(self.max_zoom, int(lev))
 
     def read_metadata(self):
         # Read metadata file

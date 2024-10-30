@@ -68,7 +68,7 @@ class TiledWebMap:
         ds = nc.Dataset(nc_file)
         self.max_zoom = ds.dimensions["zoom_levels"].size - 1
 
-    def get_data(self, xl, yl, max_pixel_size, crs=None):
+    def get_data(self, xl, yl, max_pixel_size, crs=None, waitbox=None):
         # xl and yl are in CRS 3857
         # max_pixel_size is in meters
         # returns x, y, and z in CRS 3857
@@ -119,12 +119,16 @@ class TiledWebMap:
 
         # Now download the missing tiles    
         if len(download_file_list) > 0:
+            if waitbox is not None:
+                wb = waitbox("Downloading topography tiles ...")
             # make boto s
             if self.s3_client is None:
                 self.s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
             # Download missing tiles
             with ThreadPool() as pool:
                 pool.starmap(self.download_tile_parallel, [(self.s3_bucket, key, file) for key, file in zip(download_key_list, download_file_list)])
+            if waitbox is not None:
+                wb.close()
 
         # Loop over required tiles
         for i in range(ix0, ix1 + 1):

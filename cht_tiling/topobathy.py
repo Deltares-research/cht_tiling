@@ -13,6 +13,7 @@ from .utils import num2deg
 from .utils import makedir
 from .utils import elevation2png
 from .utils import png2elevation
+from .utils import get_zoom_level_for_resolution
 
 def make_lower_level_tile(zoom_path_i,
                           zoom_path_higher,
@@ -104,19 +105,22 @@ def make_lower_level_tile(zoom_path_i,
 def make_topobathy_tiles(
     path,
     dem_names=None,
-    dataset=None,
+    dataset=None, # Must be XArray
+    dataarray_name="elevation",
     lon_range=None,
     lat_range=None,
     index_path=None,
     zoom_range=None,
+    dx_max_zoom=None,
     z_range=None,
     bathymetry_database_path="d:\\delftdashboard\\data\\bathymetry",
     quiet=False,
     make_webviewer=True,
-    write_metadata=True,
+    write_metadata=True,    
     metadata=None,
     make_lower_levels=True,
     make_highest_level=True,
+    skip_existing=False,
     interpolation_method="linear",
     encoder="terrarium",
     encoder_vmin=None,
@@ -124,7 +128,10 @@ def make_topobathy_tiles(
     compress_level=6,
     name="unknown",
     long_name="unknown",
-    url="unknown",
+    url=None,
+    s3_bucket=None,
+    s3_key=None,
+    s3_region=None,
     source="unknown",
     vertical_reference_level="MSL",
     vertical_units="m",
@@ -149,7 +156,7 @@ def make_topobathy_tiles(
 
     if dem_names is not None:
 
-        from cht_bathymetry.bathymetry_database import BathymetryDatabase
+        from cht_bathymetry.database import BathymetryDatabase
 
         dem_type = "ddb"
 
@@ -161,21 +168,38 @@ def make_topobathy_tiles(
         dem_list = []
         for dem_name in dem_names:
             dem = {}
-            dem["dataset"] = bathymetry_database.get_dataset(dem_name)
+            dem["name"] = dem_name
             dem["zmin"] = -10000.0
             dem["zmax"] = 10000.0
             dem_list.append(dem)
+
+        if lon_range is None:
+            # Try to get lon_range and lat_range from the first dataset
+            dataset = bathymetry_database.get_dataset(dem_names[0])
+            lon_range, lat_range = dataset.get_bbox(crs=CRS.from_epsg(4326))
 
     elif dataset is not None:
         dem_type = "xarray"
         ds_lon = dataset["lon"].values    
         ds_lat = dataset["lat"].values
-        ds_z_parameter = "elevation"
-        transformer_3857_to_crs = Transformer.from_crs(CRS.from_epsg(3857), dataset.crs.attrs["epsg_code"], always_xy=True)
+        ds_z_parameter = dataarray_name
+        if "crs" not in dataset:
+            dataset_crs_code = 4326
+        else:
+            dataset_crs_code = dataset.crs.attrs["epsg_code"]
+        transformer_3857_to_crs = Transformer.from_crs(CRS.from_epsg(3857), dataset_crs_code, always_xy=True)
+        if lon_range is None:
+            lon_range = [np.min(ds_lon), np.max(ds_lon)]
+        if lat_range is None:
+            lat_range = [np.min(ds_lat), np.max(ds_lat)]
+        dx = np.mean(np.diff(ds_lat)) * 111000.0    
 
 
-    if not zoom_range:
-        zoom_range = [0, 13]
+    if zoom_range is None:
+        if dx_max_zoom is None:
+            dx_max_zoom = dx * 0.5
+        zoom_max = get_zoom_level_for_resolution(dx_max_zoom)
+        zoom_range = [0, zoom_max]
 
     if not z_range:
         z_range = [-20000.0, 20000.0]
@@ -214,6 +238,9 @@ def make_topobathy_tiles(
 
         # Loop in x direction
         for i in range(ix0, ix1 + 1):
+
+            print(f"Processing column {i - ix0 + 1} of {ix1 - ix0 + 1}")
+
             path_okay = False
             zoom_path_i = os.path.join(zoom_path, str(i))
 
@@ -226,6 +253,10 @@ def make_topobathy_tiles(
 
                 # Create highest zoom level tile
                 
+                file_name = os.path.join(zoom_path_i, str(j) + ".png")
+                if os.path.exists(file_name) and skip_existing:
+                    # Tile already exists
+                    continue
 
                 if index_path:
                     # Only make tiles for which there is an index file
@@ -284,7 +315,6 @@ def make_topobathy_tiles(
                     continue
 
                 # Write to terrarium png format
-                file_name = os.path.join(zoom_path_i, str(j) + ".png")
                 elevation2png(zg, file_name,
                               compress_level=compress_level,
                               encoder=encoder,
@@ -368,6 +398,13 @@ def make_topobathy_tiles(
             if encoder_vmax is not None:
                 metadata["encoder_vmax"] = encoder_vmax
             metadata["url"] = url
+            if s3_bucket is not None:
+                metadata["s3_bucket"] = s3_bucket
+            if s3_key is not None:
+                metadata["s3_key"] = s3_key
+            if s3_region is not None:
+                metadata["s3_region"] = s3_region
+            metadata["max_zoom"] = zoom_range[1]
             metadata["interpolation_method"] = interpolation_method
             metadata["source"] = source
             metadata["coord_ref_sys_name"] = "WGS 84 / Pseudo-Mercator"
@@ -375,6 +412,7 @@ def make_topobathy_tiles(
             metadata["vertical_reference_level"] = vertical_reference_level
             metadata["vertical_units"] = vertical_units
             metadata["difference_with_msl"] = difference_with_msl
+            metadata["available_tiles"] = True
 
             metadata["description"] = {}
             metadata["description"]["title"] = "LONG_NAME"
@@ -388,6 +426,7 @@ def make_topobathy_tiles(
             metadata["description"]["disclaimer"] = "These data are made available in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
 
         # Write to toml file
-        toml_file = os.path.join(path, name + ".tml")
+        # toml_file = os.path.join(path, name + ".tml")
+        toml_file = os.path.join(path, "metadata.tml")
         with open(toml_file, "w") as f:
             toml.dump(metadata, f)

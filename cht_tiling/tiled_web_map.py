@@ -13,16 +13,15 @@ from botocore.client import Config
 import numpy as np
 import netCDF4 as nc
 from multiprocessing.pool import ThreadPool
+import xarray as xr
 
 from .topobathy import make_topobathy_tiles
-from .utils import get_zoom_level_for_resolution, png2elevation, xy2num, num2xy, list_folders
+from .utils import get_zoom_level_for_resolution, png2elevation, xy2num, num2xy, list_folders, list_files
 
 class ZoomLevel:
     def __init__(self):        
-        self.dx = 0.0
-        self.dy = 0.0
-        self.i_available = []
-        self.j_available = []
+        self.ntiles = 0
+        self.ij_available = None
 
 class TiledWebMap:
     def __init__(self, path, name, parameter="elevation"):
@@ -32,15 +31,17 @@ class TiledWebMap:
 
         self.name = name        
         self.path = path
-        self.url = ""        
+        self.url = None      
         self.parameter = "elevation"
         self.encoder = "terrarium"
         self.encoder_vmin = None
         self.encoder_vmax = None
         self.max_zoom = 0
         self.s3_client = None
+        self.s3_bucket = None
+        self.s3_key = None
+        self.s3_region = None
         self.read_metadata()
-
         # Check if available_tiles.nc exists. If not, just read the folders to get the zoom range.
         nc_file = os.path.join(self.path, "available_tiles.nc")
         self.availability_loaded = False
@@ -48,12 +49,11 @@ class TiledWebMap:
             self.availability_exists = True
         else:
             self.availability_exists = False
-            # # Check available levels in index tiles
-            # self.max_zoom = 0
-            # levs = list_folders(os.path.join(self.path, "*"), basename=True)
-            # for lev in levs:
-            #     self.max_zoom = max(self.max_zoom, int(lev))
-
+        if self.s3_bucket is not None and self.s3_key is not None and self.s3_region is not None:
+            self.download = True
+        else:
+            self.download = False
+    
     def read_metadata(self):
         # Read metadata file
         tml_file = os.path.join(self.path, "metadata.tml")
@@ -65,14 +65,25 @@ class TiledWebMap:
     def read_availability(self):
         # Read netcdf file with dimensions
         nc_file = os.path.join(self.path, "available_tiles.nc")
-        ds = nc.Dataset(nc_file)
-        self.max_zoom = ds.dimensions["zoom_levels"].size - 1
+        ds = xr.open_dataset(nc_file)
+        self.zoom_levels = []
+        # Loop through zoom levels
+        for izoom in range(self.max_zoom + 1):
+            n = 2**izoom
+            iname = f"i_available_{izoom}"
+            jname = f"j_available_{izoom}"
+            iav = ds[iname].values[:]
+            jav = ds[jname].values[:]
+            zoom_level = ZoomLevel()
+            zoom_level.ntiles = n
+            zoom_level.ij_available = iav * n + jav
+            self.zoom_levels.append(zoom_level)
+        ds.close()    
 
     def get_data(self, xl, yl, max_pixel_size, crs=None, waitbox=None):
         # xl and yl are in CRS 3857
         # max_pixel_size is in meters
-        # returns x, y, and z in CRS 3857
-        
+        # returns x, y, and z in CRS 3857        
         # Check if availability matrix exists but has not been loaded
         if self.availability_exists and not self.availability_loaded:
             self.read_availability()
@@ -101,34 +112,41 @@ class TiledWebMap:
         # First try to download missing tiles (it's faster if we can do this in parallel)
         download_file_list = []
         download_key_list = []
-        for i in range(ix0, ix1 + 1):
-            ifolder = str(i)
-            for j in range(iy0, iy1 + 1):
-                png_file = os.path.join(
-                    self.path, str(izoom), ifolder, str(j) + ".png"
-                )                
-                if not os.path.exists(png_file):
-                    okay = self.check_download(i, j, izoom)
-                    if okay:
+
+        if self.download:
+            for i in range(ix0, ix1 + 1):
+                ifolder = str(i)
+                for j in range(iy0, iy1 + 1):
+
+                    png_file = os.path.join(
+                        self.path, str(izoom), ifolder, str(j) + ".png"
+                    )                
+                    if not os.path.exists(png_file):
+                        # File does not yet exist
+                        if self.availability_exists:
+                            # Check availability of the tile in matrix.
+                            if not self.check_availability(i, j, izoom):
+                                # Tile is also not available for download
+                                continue
                         # Add to download_list
                         download_file_list.append(png_file)
-                        download_key_list.append("data/bathymetry/" + self.name + "/" + str(izoom) + "/" + ifolder + "/" + str(j) + ".png")
+                        download_key_list.append(f"{self.s3_key}/{str(izoom)}/{ifolder}/{str(j)}.png")
                         # Make sure the folder exists
                         if not os.path.exists(os.path.dirname(png_file)):
                             os.makedirs(os.path.dirname(png_file))
 
-        # Now download the missing tiles    
-        if len(download_file_list) > 0:
-            if waitbox is not None:
-                wb = waitbox("Downloading topography tiles ...")
-            # make boto s
-            if self.s3_client is None:
-                self.s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
-            # Download missing tiles
-            with ThreadPool() as pool:
-                pool.starmap(self.download_tile_parallel, [(self.s3_bucket, key, file) for key, file in zip(download_key_list, download_file_list)])
-            if waitbox is not None:
-                wb.close()
+            # Now download the missing tiles    
+            if len(download_file_list) > 0:            
+                if waitbox is not None:
+                    wb = waitbox("Downloading topography tiles ...")
+                # make boto s
+                if self.s3_client is None:
+                    self.s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
+                # Download missing tiles
+                with ThreadPool() as pool:
+                    pool.starmap(self.download_tile_parallel, [(self.s3_bucket, key, file) for key, file in zip(download_key_list, download_file_list)])
+                if waitbox is not None:
+                    wb.close()
 
         # Loop over required tiles
         for i in range(ix0, ix1 + 1):
@@ -140,11 +158,7 @@ class TiledWebMap:
                 )
 
                 if not os.path.exists(png_file):
-                    # Fetch the file
-                    # okay = self.fetch_tile(i, j, izoom)
-                    if not okay:
-                        # No bathy for this tile, continue
-                        continue
+                    continue
 
                 # Read the png file
                 valt = png2elevation(png_file,
@@ -171,91 +185,94 @@ class TiledWebMap:
     def generate_topobathy_tiles(self, **kwargs):
         make_topobathy_tiles(self.path, **kwargs)
 
-    # def generate_index_tiles(self, kwargs):
-    #     make_index_tiles(self.path, **kwargs)
-
-    # def generate_floodmap_tiles(self, kwargs):
-    #     make_floodmap_tiles(self.path, **kwargs)
-
-    def fetch_tile(self, i, j, izoom):
-        # Checks whether tile should be available, and if so, tries to download it
-        okay = False
-        if self.check_download(i, j, izoom):
-            # It should be on a server somewhere, so download it
-            okay = self.download_tile(i, j, izoom)
-        return okay            
-
-    def check_download(self, i, j, izoom):
-        # Checks whether it's available to download
-        okay = False
-        # If url is provided, the tile may be on a web server.
-        if self.url is not None:
-            if not self.availability_exists:
-                # There is no availability matrix, so we assume all tiles are available.
-                okay = True
-            else:
-                # Check availability of the tile in matrix.
-                okay = self.check_availability(i, j, izoom)
-        return okay        
-
     def check_availability(self, i, j, izoom):
         # Check if tile exists at all
-        available = False
+        zoom_level = self.zoom_levels[izoom]
+        ij = i * zoom_level.ntiles + j
+        # Use numpy array for fast search
+        available = np.isin(ij, zoom_level.ij_available)
         return available
 
     def download_tile(self, i, j, izoom):
-
-        bucket = "deltares-ddb"
-        key = f"data/bathymetry/{self.name}/{izoom}/{i}/{j}.png"
-
+        key = f"{self.s3_key}/{izoom}/{i}/{j}.png"
         filename = os.path.join(self.path, str(izoom), str(i), str(j) + ".png")
-
-        # Make sure the folder exists
-        if not os.path.exists(os.path.dirname(filename)):
-            os.makedirs(os.path.dirname(filename))
-         
         try:
-
-
-            self.s3_client.download_file(Bucket=bucket,     # assign bucket name
-                                         Key=key,           # key is the file name
-                                         Filename=filename) # storage file path
+            self.s3_client.download_file(Bucket=self.bucket, # assign bucket name
+                                         Key=key,            # key is the file name
+                                         Filename=filename)  # storage file path
             print(f"Downloaded {key}")
             okay = True
-
         except:
             # Download failed
             print(f"Failed to download {key}")
-            okay = False    
-
+            okay = False
         return okay
 
     def download_tile_parallel(self, bucket, key, file):         
         try:
+
+            # Make sure the folder exists
+            if not os.path.exists(os.path.dirname(file)):
+                os.makedirs(os.path.dirname(file))
+
             self.s3_client.download_file(Bucket=bucket,     # assign bucket name
                                          Key=key,           # key is the file name
                                          Filename=file) # storage file path
             print(f"Downloaded {key}")
             okay = True
 
-        except:
+        except Exception as e:
             # Download failed
+            print(e)
             print(f"Failed to download {key}")
             okay = False    
 
         return okay
 
-    def upload(self, name, bucket_name, s3_folder, access_key, secret_key, region, parallel=True, quiet=True):
+    def upload(self, bucket_name, s3_folder, access_key, secret_key, region, parallel=True, quiet=True):
         from cht_utils.s3 import S3Session
         # Upload to S3
         try:
             s3 = S3Session(access_key, secret_key, region)
             # Upload entire folder to S3 server
-            s3.upload_folder(bucket_name, self.path, s3_folder, parallel=parallel, quiet=quiet)
-            # pth = os.path.join(self.path, "9") 
-            # s3pth = s3_folder + "/9"
-            # s3.upload_folder(bucket_name, pth, s3pth, parallel=parallel, quiet=quiet)
+            s3.upload_folder(bucket_name, self.path, f"{s3_folder}/{self.name}", parallel=parallel, quiet=quiet)
         except BaseException as e:
             print("An error occurred while uploading !")
         pass
 
+    def make_availability_file(self):
+        # Make availability file
+        # Loop through zoom levels
+        ds = xr.Dataset()
+        zoom_level_paths = list_folders(os.path.join(self.path, "*"), basename=True)
+        zoom_levels = [int(z) for z in zoom_level_paths]
+        zoom_levels.sort()        
+        for izoom in zoom_levels:
+            # Create empty array
+            n = 0
+            iav = []
+            jav = []
+            i_paths = list_folders(os.path.join(self.path, str(izoom), "*"), basename=True)
+            for ipath in i_paths:
+                i = int(ipath)
+                j_paths = list_files(os.path.join(self.path, str(izoom), ipath, "*"))
+                for jpath in j_paths:
+                    pngfile = os.path.basename(jpath)
+                    j = int(pngfile.split(".")[0])
+                    iav.append(i)
+                    jav.append(j)
+                    n += 1
+            # Now create dataarrays i_available and j_available
+            iav = np.array(iav)
+            jav = np.array(jav)
+            dimname = f"n_{izoom}"
+            iname = f"i_available_{izoom}"
+            jname = f"j_available_{izoom}"
+            ds[iname] = xr.DataArray(iav, dims=dimname)
+            ds[jname] = xr.DataArray(jav, dims=dimname)           
+
+        # Save to netcdf file
+        nc_file = os.path.join(self.path, "available_tiles.nc")
+        ds.to_netcdf(nc_file)
+
+        ds.close()

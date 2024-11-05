@@ -350,7 +350,7 @@ def png2elevation(png_file,
 #     """Convert rgb tuple to elevation"""
 #     val = (rgb[:,:,0] * 256 + rgb[:,:,1] + rgb[:,:,2] / 256) - 32768.0
 #     # where val is less than -32767, set to NaN
-#     val[val<-32767.0] = np.NaN
+#     val[val<-32767.0] = np.nan
 #     return val
 
 

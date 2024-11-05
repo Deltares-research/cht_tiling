@@ -113,7 +113,7 @@ def make_floodmap_overlay(
                     zs = zb + depth
 
                     valt = valg[ind](zs)
-                    valt[ind < 0] = np.NaN
+                    valt[ind < 0] = np.nan
 
                 else:
                     # Read bathy
@@ -128,8 +128,8 @@ def make_floodmap_overlay(
 
                     valt = valg[ind]
                     valt = valt - zb
-                    valt[valt < 0.05] = np.NaN
-                    valt[zb < zbmax] = np.NaN
+                    valt[valt < 0.05] = np.nan
+                    valt[zb < zbmax] = np.nan
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
@@ -593,7 +593,7 @@ def make_overlay(
                     continue
                 ind = png2int(index_file, np.size(val) - 1)
                 valt = val[ind] - zb # water depth
-                valt[valt < 0.05] = np.NaN # should make this configurable
+                valt[valt < 0.05] = np.nan # should make this configurable
 
             elif option == "topo":
                 # Get topo for this tile

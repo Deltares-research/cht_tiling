@@ -141,7 +141,7 @@ def make_png_tiles(
                     zs = zb + depth
 
                     valt = valg[ind](zs)
-                    valt[ind < 0] = np.NaN
+                    valt[ind < 0] = np.nan
 
                 elif topo_path and option == "floodmap":
                     # Read bathy
@@ -155,8 +155,8 @@ def make_png_tiles(
 
                     valt = valg[ind]
                     valt = valt - zb
-                    valt[valt < 0.05] = np.NaN
-                    valt[zb < zbmax] = np.NaN
+                    valt[valt < 0.05] = np.nan
+                    valt[zb < zbmax] = np.nan
 
                 elif topo_path and option == "topography":
                     # Read bathy
@@ -172,7 +172,7 @@ def make_png_tiles(
 
                 else:
                     valt = valg[ind]
-                    valt[ind < 0] = np.NaN
+                    valt[ind < 0] = np.nan
 
                 if color_values:
                     rgb = np.zeros((256 * 256, 4), "uint8")
@@ -314,7 +314,7 @@ def make_floodmap_tiles(
                 zs = zb + depth
 
                 valt = valg[ind](zs)
-                valt[ind < 0] = np.NaN
+                valt[ind < 0] = np.nan
 
             else:
                 # Read bathy
@@ -328,8 +328,8 @@ def make_floodmap_tiles(
 
                 valt = valg[ind]
                 valt = valt - zb
-                valt[valt < 0.05] = np.NaN
-                valt[zb < zbmax] = np.NaN
+                valt[valt < 0.05] = np.nan
+                valt[zb < zbmax] = np.nan
 
             if color_values:
                 rgb = np.zeros((256 * 256, 4), "uint8")
@@ -571,7 +571,7 @@ def make_floodmap_overlay(
                 zs = zb + depth
 
                 valt = valg[ind](zs)
-                valt[ind < 0] = np.NaN
+                valt[ind < 0] = np.nan
 
             else:
                 # Read bathy
@@ -585,8 +585,8 @@ def make_floodmap_overlay(
 
                 valt = valg[ind]
                 valt = valt - zb
-                valt[valt < 0.05] = np.NaN
-                valt[zb < zbmax] = np.NaN
+                valt[valt < 0.05] = np.nan
+                valt[zb < zbmax] = np.nan
 
             ii0 = (i - ix0) * 256
             ii1 = ii0 + 256
@@ -739,7 +739,7 @@ def make_floodmap_overlay_v2(
                     zs = zb + depth
 
                     valt = valg[ind](zs)
-                    valt[ind < 0] = np.NaN
+                    valt[ind < 0] = np.nan
 
                 else:
                     # Read bathy
@@ -754,8 +754,8 @@ def make_floodmap_overlay_v2(
 
                     valt = valg[ind]
                     valt = valt - zb
-                    valt[valt < 0.05] = np.NaN
-                    valt[zb < zbmax] = np.NaN
+                    valt[valt < 0.05] = np.nan
+                    valt[zb < zbmax] = np.nan
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
@@ -1205,7 +1205,7 @@ def get_bathy_on_tile(
         # Get DEM data (ddb format for now)
         x, y, z = bathymetry_database.get_data(dem_name, xl, yl, max_cell_size=dxy)
 
-        if x is np.NaN:
+        if x is np.nan:
             # No data obtained from bathymetry database
             continue
 
@@ -1277,7 +1277,7 @@ def png2elevation(png_file):
     # Convert RGB values to elevation values
     elevation = (rgb[:, :, 0] * 256 + rgb[:, :, 1] + rgb[:, :, 2] / 256) - 32768.0
     # where val is less than -32767, set to NaN
-    elevation[elevation < -32767.0] = np.NaN
+    elevation[elevation < -32767.0] = np.nan
     return elevation
 
 
@@ -1312,7 +1312,7 @@ def elevation2png(val, png_file):
 #     """Convert rgb tuple to elevation"""
 #     val = (rgb[:,:,0] * 256 + rgb[:,:,1] + rgb[:,:,2] / 256) - 32768.0
 #     # where val is less than -32767, set to NaN
-#     val[val<-32767.0] = np.NaN
+#     val[val<-32767.0] = np.nan
 #     return val
 
 

@@ -107,6 +107,8 @@ def make_topobathy_tiles(
     dem_names=None,
     dataset=None, # Must be XArray
     dataarray_name="elevation",
+    dataarray_x_name="lon",
+    dataarray_y_name="lat",
     lon_range=None,
     lat_range=None,
     index_path=None,
@@ -180,8 +182,8 @@ def make_topobathy_tiles(
 
     elif dataset is not None:
         dem_type = "xarray"
-        ds_lon = dataset["lon"].values    
-        ds_lat = dataset["lat"].values
+        ds_lon = dataset[dataarray_x_name].values    
+        ds_lat = dataset[dataarray_y_name].values
         ds_z_parameter = dataarray_name
         if "crs" not in dataset:
             dataset_crs_code = 4326
@@ -254,9 +256,21 @@ def make_topobathy_tiles(
                 # Create highest zoom level tile
                 
                 file_name = os.path.join(zoom_path_i, str(j) + ".png")
-                if os.path.exists(file_name) and skip_existing:
-                    # Tile already exists
-                    continue
+                if os.path.exists(file_name):
+                    if skip_existing:
+                        # Tile already exists
+                        continue
+                    else:
+                        # Read the tile
+                        zg0 = png2elevation(file_name,
+                                            encoder=encoder,
+                                            encoder_vmin=encoder_vmin,
+                                            encoder_vmax=encoder_vmax)
+                        pass
+                else:
+                    # Tile does not exist
+                    zg0 = np.zeros((npix, npix))
+                    zg0[:] = np.nan    
 
                 if index_path:
                     # Only make tiles for which there is an index file
@@ -295,11 +309,40 @@ def make_topobathy_tiles(
                     xg_max = xg_max + dbuff
                     yg_min = yg_min - dbuff
                     yg_max = yg_max + dbuff
+
                     # Get the indices of the dataset that are within the xg, yg range
-                    i0 = np.where(ds_lon >= xg_min)[0][0]
-                    i1 = np.where(ds_lon <= xg_max)[0][-1]
-                    j0 = np.where(ds_lat >= yg_min)[0][0]
-                    j1 = np.where(ds_lat <= yg_max)[0][-1]
+                    i0 = np.where(ds_lon <= xg_min)[0]
+                    if len(i0) == 0:
+                        # Take first index
+                        i0 = 0
+                    else:
+                        # Take last index
+                        i0 = i0[-1]
+                    i1 = np.where(ds_lon >= xg_max)[0]
+                    if len(i1) == 0:
+                        i1 = len(ds_lon) - 1
+                    else:
+                        i1 = i1[0]
+                    if i1 <= i0:
+                        # No data for this tile
+                        continue
+                    j0 = np.where(ds_lat <= yg_min)[0]
+                    if len(j0) == 0:
+                        j0 = 0
+                    else:
+                        j0 = j0[-1]
+                    j1 = np.where(ds_lat >= yg_max)[0]
+                    if len(j1) == 0:
+                        j1 = len(ds_lat) - 1
+                    else:
+                        j1 = j1[0]
+                    if j1 <= j0:
+                        # No data for this tile
+                        continue
+                    # i0 = np.where(ds_lon >= xg_min)[0][0]
+                    # i1 = np.where(ds_lon <= xg_max)[0][-1]
+                    # j0 = np.where(ds_lat >= yg_min)[0][0]
+                    # j1 = np.where(ds_lat <= yg_max)[0][-1]
                     # Get the dataset within the range
                     xd = ds_lon[i0:i1]
                     yd = ds_lat[j0:j1]
@@ -313,6 +356,10 @@ def make_topobathy_tiles(
                 if np.nanmax(zg) < z_range[0] or np.nanmin(zg) > z_range[1]:
                     # all values in tile outside z_range
                     continue
+
+                # Overwrite zg with zg0 where not nan
+                mask = np.isnan(zg)
+                zg[mask] = zg0[mask]
 
                 # Write to terrarium png format
                 elevation2png(zg, file_name,

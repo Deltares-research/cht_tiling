@@ -119,6 +119,7 @@ def make_topobathy_tiles(
     quiet=False,
     make_webviewer=True,
     write_metadata=True,    
+    make_availability_file=True,
     metadata=None,
     make_lower_levels=True,
     make_highest_level=True,

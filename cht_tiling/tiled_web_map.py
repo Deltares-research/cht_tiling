@@ -184,6 +184,9 @@ class TiledWebMap:
 
     def generate_topobathy_tiles(self, **kwargs):
         make_topobathy_tiles(self.path, **kwargs)
+        if "make_availability_file" in kwargs:
+            if kwargs["make_availability_file"]:
+                self.make_availability_file()
 
     def check_availability(self, i, j, izoom):
         # Check if tile exists at all

@@ -105,6 +105,8 @@ def make_lower_level_tile(zoom_path_i,
 def make_topobathy_tiles(
     path,
     dem_names=None,
+    dem_list=None,
+    bathymetry_database=None,
     dataset=None, # Must be XArray
     dataarray_name="elevation",
     dataarray_x_name="lon",
@@ -158,16 +160,6 @@ def make_topobathy_tiles(
     """
 
     if dem_names is not None:
-
-        from cht_bathymetry.database import BathymetryDatabase
-
-        dem_type = "ddb"
-
-        # from cht_utils.misc_tools import interp2
-
-        bathymetry_database = BathymetryDatabase(None)
-        bathymetry_database.initialize(bathymetry_database_path)
-
         dem_list = []
         for dem_name in dem_names:
             dem = {}
@@ -176,9 +168,18 @@ def make_topobathy_tiles(
             dem["zmax"] = 10000.0
             dem_list.append(dem)
 
-        if lon_range is None:
+    if dem_list:
+
+        dem_type = "ddb"
+
+        if bathymetry_database is None:
+            from cht_bathymetry.database import BathymetryDatabase
+            bathymetry_database = BathymetryDatabase(None)
+            bathymetry_database.initialize(bathymetry_database_path)
+
+        if lon_range is None and index_path is None:
             # Try to get lon_range and lat_range from the first dataset
-            dataset = bathymetry_database.get_dataset(dem_names[0])
+            dataset = bathymetry_database.get_dataset(dem_list[0]["name"])
             lon_range, lat_range = dataset.get_bbox(crs=CRS.from_epsg(4326))
 
     elif dataset is not None:
@@ -231,8 +232,26 @@ def make_topobathy_tiles(
         yy = xx[:]
         xv, yv = np.meshgrid(xx, yy)
 
-        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+        # Determine min and max indices for this zoom level
+        # If the index path is given, then get ix0, ix1, iy0 and iy1 from the existing index files
+        # Otherwise, use lon_range and lat_range  
+
+        if index_path:
+            index_zoom_path = os.path.join(index_path, str(izoom))
+            # List folders and turn names into integers
+            iy0 = 1e15
+            iy1 = -1e15
+            ix_list = [int(i) for i in os.listdir(index_zoom_path)]
+            ix0 = min(ix_list)
+            ix1 = max(ix_list)
+            # Now loop through the folders to get the min and max y indices
+            for i in range(ix0, ix1 + 1):
+                iy_list = [int(j.split(".")[0]) for j in os.listdir(os.path.join(index_zoom_path, str(i)))]
+                iy0 = min(iy0, min(iy_list))
+                iy1 = max(iy1, max(iy_list))
+        else:
+            ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+            ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         ix0 = max(0, ix0)
         iy0 = max(0, iy0)
@@ -393,8 +412,23 @@ def make_topobathy_tiles(
             zoom_path = os.path.join(path, str(izoom))
             zoom_path_higher = os.path.join(path, str(izoom + 1))
 
-            ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-            ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+            if index_path:
+                index_zoom_path = os.path.join(index_path, str(izoom))
+                # List folders and turn names into integers
+                iy0 = 1e15
+                iy1 = -1e15
+                ix_list = [int(i) for i in os.listdir(index_zoom_path)]
+                ix0 = min(ix_list)
+                ix1 = max(ix_list)
+                # Now loop through the folders to get the min and max y indices
+                for i in range(ix0, ix1 + 1):
+                    iy_list = [int(j.split(".")[0]) for j in os.listdir(os.path.join(index_zoom_path, str(i)))]
+                    iy0 = min(iy0, min(iy_list))
+                    iy1 = max(iy1, max(iy_list))
+            else:
+                ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+                ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+
             ix0 = max(0, ix0)
             iy0 = max(0, iy0)
             ix1 = min(2**izoom - 1, ix1)

@@ -80,20 +80,20 @@ class TiledWebMap:
     def read_availability(self):
         # Read netcdf file with dimensions
         nc_file = os.path.join(self.path, "available_tiles.nc")
-        ds = xr.open_dataset(nc_file)
-        self.zoom_levels = []
-        # Loop through zoom levels
-        for izoom in range(self.max_zoom + 1):
-            n = 2**izoom
-            iname = f"i_available_{izoom}"
-            jname = f"j_available_{izoom}"
-            iav = ds[iname].to_numpy()[:]
-            jav = ds[jname].to_numpy()[:]
-            zoom_level = ZoomLevel()
-            zoom_level.ntiles = n
-            zoom_level.ij_available = iav * n + jav
-            self.zoom_levels.append(zoom_level)
-        ds.close()
+
+        with xr.open_dataset(nc_file) as ds:
+            self.zoom_levels = []
+            # Loop through zoom levels
+            for izoom in range(self.max_zoom + 1):
+                n = 2**izoom
+                iname = f"i_available_{izoom}"
+                jname = f"j_available_{izoom}"
+                iav = ds[iname].to_numpy()[:]
+                jav = ds[jname].to_numpy()[:]
+                zoom_level = ZoomLevel()
+                zoom_level.ntiles = n
+                zoom_level.ij_available = iav * n + jav
+                self.zoom_levels.append(zoom_level)
 
     def get_data(self, xl, yl, max_pixel_size, crs=None, waitbox=None):
         # xl and yl are in CRS 3857

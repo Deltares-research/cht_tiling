@@ -81,28 +81,27 @@ def test_get_tiles_from_netcdf():
     path = os.path.join(dbpath, name)
 
     twm = TiledWebMap(path, name, parameter="elevation")
-    ds = xr.open_dataset(ncfile)
-    twm.generate_topobathy_tiles(
-        dataset=ds,
-        dataarray_name=dataarray_name,
-        quiet=False,
-        make_webviewer=True,
-        write_metadata=True,
-        skip_existing=True,
-        interpolation_method="linear",
-        encoder=encoder,
-        name=name,
-        long_name=long_name,
-        source=source,
-        vertical_reference_level=vertical_reference_level,
-        vertical_units="m",
-        difference_with_msl=0.0,
-        s3_bucket=s3_bucket,
-        s3_key=f"{s3_key}/{name}",
-        s3_region=s3_region,
-        make_availability_file=make_availability_file,
-    )
-    ds.close()
+    with xr.open_dataset(ncfile) as ds:
+        twm.generate_topobathy_tiles(
+            dataset=ds,
+            dataarray_name=dataarray_name,
+            quiet=False,
+            make_webviewer=True,
+            write_metadata=True,
+            skip_existing=True,
+            interpolation_method="linear",
+            encoder=encoder,
+            name=name,
+            long_name=long_name,
+            source=source,
+            vertical_reference_level=vertical_reference_level,
+            vertical_units="m",
+            difference_with_msl=0.0,
+            s3_bucket=s3_bucket,
+            s3_key=f"{s3_key}/{name}",
+            s3_region=s3_region,
+            make_availability_file=make_availability_file,
+        )
 
     # TODO asserts
 

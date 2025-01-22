@@ -187,7 +187,7 @@ def make_topobathy_tiles(
         dem_type = "ddb"
 
         if bathymetry_database is None:
-            from cht_bathymetry.database import BathymetryDatabase
+            from cht_bathymetry.bathymetry_database import BathymetryDatabase
 
             bathymetry_database = BathymetryDatabase(None)
             bathymetry_database.initialize(bathymetry_database_path)

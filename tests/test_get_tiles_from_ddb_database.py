@@ -24,7 +24,7 @@ def test_get_tiles_from_ddb_database():
     original_db_dataset_names = ["ncei_ninth_prusvi"]
     vertical_reference_levels = ["unknown"]
 
-    for index, name in names:
+    for index, name in enumerate(names):
         long_name = long_names[index]
         original_db_dataset_name = original_db_dataset_names[index]
         source = sources[index]

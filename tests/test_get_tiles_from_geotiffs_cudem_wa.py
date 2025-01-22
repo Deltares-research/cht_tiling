@@ -1,16 +1,13 @@
 import os
+
+import cht_utils.fileops as fo
+import numpy as np
+
 # import xarray as xr
 # import numpy as np
 # from scipy.interpolate import RegularGridInterpolator
-import geopandas as gpd
 import rasterio
-from rasterio.plot import show
-import matplotlib
-import matplotlib.pyplot as plt
 import xarray as xr
-import numpy as np
-
-import cht_utils.fileops as fo
 
 from cht_tiling import TiledWebMap
 
@@ -53,15 +50,15 @@ from cht_tiling import TiledWebMap
 #     ds.close()
 
 dbpath = r"c:\work\projects\delftdashboard\delftdashboard_python\data\bathymetry"
-s3_bucket="deltares-ddb"
-s3_key="data/bathymetry"
-s3_region="eu-west-1"
+s3_bucket = "deltares-ddb"
+s3_key = "data/bathymetry"
+s3_region = "eu-west-1"
 
 name = "cudem_ninth_wa_outercoast"
 long_name = "CUDEM (9th degree) Washington Outer Coast"
 source = "NOAA NCEI"
 vertical_reference_level = "NAVD88"
-encoder="terrarium"
+encoder = "terrarium"
 dxmax = 10.0
 
 # Create TiledWebMap object
@@ -91,44 +88,37 @@ for f in flist:
         z = np.flip(z, axis=0)
 
     # Create xarray dataset
-    ds = xr.Dataset(
-        {
-            "elevation": (["y", "x"], z)
-        },
-        coords={
-            "x": x,
-            "y": y
-        }
-    )
+    ds = xr.Dataset({"elevation": (["y", "x"], z)}, coords={"x": x, "y": y})
     ds["crs"] = src.crs
     ds.crs.attrs["epsg_code"] = src.crs.to_epsg()
     # ds = xr.open_dataset(ncfile)
-    twm.generate_topobathy_tiles(dataset=ds,
-                                dataarray_name="elevation",
-                                dataarray_x_name="x",
-                                dataarray_y_name="y",
-                                dx_max_zoom=dxmax,
-                                quiet=False,
-                                make_webviewer=True,
-                                write_metadata=True,
-                                make_availability_file=True,
-                                skip_existing=False,
-                                interpolation_method="linear",
-                                encoder=encoder,
-                                name=name,
-                                long_name=long_name,
-                                source=source,
-                                vertical_reference_level=vertical_reference_level,
-                                vertical_units="m",
-                                difference_with_msl=0.0,
-                                s3_bucket=s3_bucket,
-                                s3_key=f"{s3_key}/{name}",
-                                # make_availability_file=True,
-                                s3_region=s3_region)
+    twm.generate_topobathy_tiles(
+        dataset=ds,
+        dataarray_name="elevation",
+        dataarray_x_name="x",
+        dataarray_y_name="y",
+        dx_max_zoom=dxmax,
+        quiet=False,
+        make_webviewer=True,
+        write_metadata=True,
+        make_availability_file=True,
+        skip_existing=False,
+        interpolation_method="linear",
+        encoder=encoder,
+        name=name,
+        long_name=long_name,
+        source=source,
+        vertical_reference_level=vertical_reference_level,
+        vertical_units="m",
+        difference_with_msl=0.0,
+        s3_bucket=s3_bucket,
+        s3_key=f"{s3_key}/{name}",
+        # make_availability_file=True,
+        s3_region=s3_region,
+    )
     # twm.make_availability_file()
-    
-    ds.close()
 
+    ds.close()
 
 
 # ncfile = os.path.join(datapath, "usgs_dem_10m_guam.nc")
@@ -142,7 +132,6 @@ for f in flist:
 #                 s3_region="eu-west-1",
 #                 available_tiles=True,
 #                 upload=False)
-
 
 
 # name = "gebco_2024"

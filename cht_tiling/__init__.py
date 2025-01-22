@@ -7,4 +7,6 @@ Created on Sun Apr 25 10:58:08 2021
 
 __version__ = "1.0.0"
 
-from .tiled_web_map import TiledWebMap
+from cht_tiling.tiled_web_map import TiledWebMap
+
+__all__ = ["TiledWebMap"]

@@ -5,13 +5,9 @@ import cht_utils.fileops as fo
 # import xarray as xr
 # import numpy as np
 # from scipy.interpolate import RegularGridInterpolator
-import geopandas as gpd
-import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 import xarray as xr
-from rasterio.plot import show
 
 from cht_tiling import TiledWebMap
 

@@ -1,35 +1,39 @@
 import os
-import numpy as np
-from pyproj import CRS, Transformer
 import time
-import toml
 from multiprocessing.pool import ThreadPool
 
+import numpy as np
+import toml
 from cht_utils.misc_tools import interp2
+from pyproj import CRS, Transformer
 
-from .webviewer import write_html
-from .utils import deg2num
-from .utils import num2deg
-from .utils import makedir
-from .utils import elevation2png
-from .utils import png2elevation
-from .utils import get_zoom_level_for_resolution
+from cht_tiling.utils import (
+    deg2num,
+    elevation2png,
+    get_zoom_level_for_resolution,
+    makedir,
+    num2deg,
+    png2elevation,
+)
+from cht_tiling.webviewer import write_html
 
-def make_lower_level_tile(zoom_path_i,
-                          zoom_path_higher,
-                          i,
-                          j,
-                          npix,
-                          encoder,
-                          encoder_vmin,
-                          encoder_vmax,
-                          compress_level):
 
+def make_lower_level_tile(
+    zoom_path_i,
+    zoom_path_higher,
+    i,
+    j,
+    npix,
+    encoder,
+    encoder_vmin,
+    encoder_vmax,
+    compress_level,
+):
     # Get the indices of the tiles in the higher zoom level
-    i00, j00 = 2 * i, 2 * j         # upper left
-    i10, j10 = 2 * i, 2 * j + 1     # lower left
-    i01, j01 = 2 * i + 1, 2 * j     # upper right
-    i11, j11 = 2 * i + 1, 2 * j + 1 # lower right
+    i00, j00 = 2 * i, 2 * j  # upper left
+    i10, j10 = 2 * i, 2 * j + 1  # lower left
+    i01, j01 = 2 * i + 1, 2 * j  # upper right
+    i11, j11 = 2 * i + 1, 2 * j + 1  # lower right
 
     # Create empty array of NaN to store the elevation data from the higher zoom level
     zg512 = np.zeros((npix * 2, npix * 2))
@@ -45,37 +49,45 @@ def make_lower_level_tile(zoom_path_i,
     # Upper left
     file_name = os.path.join(zoom_path_higher, str(i00), str(j00) + ".png")
     if os.path.exists(file_name):
-        zgh = png2elevation(file_name,
-                            encoder=encoder,
-                            encoder_vmin=encoder_vmin,
-                            encoder_vmax=encoder_vmax)
+        zgh = png2elevation(
+            file_name,
+            encoder=encoder,
+            encoder_vmin=encoder_vmin,
+            encoder_vmax=encoder_vmax,
+        )
         zg512[0:npix, 0:npix] = zgh
         okay = True
-    # Lower left    
+    # Lower left
     file_name = os.path.join(zoom_path_higher, str(i10), str(j10) + ".png")
     if os.path.exists(file_name):
-        zgh = png2elevation(file_name,
-                            encoder=encoder,
-                            encoder_vmin=encoder_vmin,
-                            encoder_vmax=encoder_vmax)
+        zgh = png2elevation(
+            file_name,
+            encoder=encoder,
+            encoder_vmin=encoder_vmin,
+            encoder_vmax=encoder_vmax,
+        )
         zg512[npix:, 0:npix] = zgh
         okay = True
-    # Upper right    
+    # Upper right
     file_name = os.path.join(zoom_path_higher, str(i01), str(j01) + ".png")
     if os.path.exists(file_name):
-        zgh = png2elevation(file_name,
-                            encoder=encoder,
-                            encoder_vmin=encoder_vmin,
-                            encoder_vmax=encoder_vmax)
+        zgh = png2elevation(
+            file_name,
+            encoder=encoder,
+            encoder_vmin=encoder_vmin,
+            encoder_vmax=encoder_vmax,
+        )
         zg512[0:npix, npix:] = zgh
         okay = True
-    # Lower right    
+    # Lower right
     file_name = os.path.join(zoom_path_higher, str(i11), str(j11) + ".png")
     if os.path.exists(file_name):
-        zgh = png2elevation(file_name,
-                            encoder=encoder,
-                            encoder_vmin=encoder_vmin,
-                            encoder_vmax=encoder_vmax)
+        zgh = png2elevation(
+            file_name,
+            encoder=encoder,
+            encoder_vmin=encoder_vmin,
+            encoder_vmax=encoder_vmax,
+        )
         zg512[npix:, npix:] = zgh
         okay = True
 
@@ -85,21 +97,24 @@ def make_lower_level_tile(zoom_path_i,
 
     # Compute average of 4 tiles in higher zoom level
     # Data from zg512 with stride 2
-    zg4[0,:,:] = zg512[0:npix * 2:2, 0:npix * 2:2]
-    zg4[1,:,:] = zg512[1:npix * 2:2, 0:npix * 2:2]
-    zg4[2,:,:] = zg512[0:npix * 2:2, 1:npix * 2:2]
-    zg4[3,:,:] = zg512[1:npix * 2:2, 1:npix * 2:2]
+    zg4[0, :, :] = zg512[0 : npix * 2 : 2, 0 : npix * 2 : 2]
+    zg4[1, :, :] = zg512[1 : npix * 2 : 2, 0 : npix * 2 : 2]
+    zg4[2, :, :] = zg512[0 : npix * 2 : 2, 1 : npix * 2 : 2]
+    zg4[3, :, :] = zg512[1 : npix * 2 : 2, 1 : npix * 2 : 2]
 
     # Compute average of 4 tiles
     zg = np.nanmean(zg4, axis=0)
 
     # Write to terrarium png format
     file_name = os.path.join(zoom_path_i, str(j) + ".png")
-    elevation2png(zg, file_name,
-                    encoder=encoder,
-                    encoder_vmin=encoder_vmin,
-                    encoder_vmax=encoder_vmax,                                 
-                    compress_level=compress_level)
+    elevation2png(
+        zg,
+        file_name,
+        encoder=encoder,
+        encoder_vmin=encoder_vmin,
+        encoder_vmax=encoder_vmax,
+        compress_level=compress_level,
+    )
 
 
 def make_topobathy_tiles(
@@ -107,7 +122,7 @@ def make_topobathy_tiles(
     dem_names=None,
     dem_list=None,
     bathymetry_database=None,
-    dataset=None, # Must be XArray
+    dataset=None,  # Must be XArray
     dataarray_name="elevation",
     dataarray_x_name="lon",
     dataarray_y_name="lat",
@@ -120,7 +135,7 @@ def make_topobathy_tiles(
     bathymetry_database_path="d:\\delftdashboard\\data\\bathymetry",
     quiet=False,
     make_webviewer=True,
-    write_metadata=True,    
+    write_metadata=True,
     make_availability_file=True,
     metadata=None,
     make_lower_levels=True,
@@ -169,11 +184,11 @@ def make_topobathy_tiles(
             dem_list.append(dem)
 
     if dem_list:
-
         dem_type = "ddb"
 
         if bathymetry_database is None:
             from cht_bathymetry.database import BathymetryDatabase
+
             bathymetry_database = BathymetryDatabase(None)
             bathymetry_database.initialize(bathymetry_database_path)
 
@@ -184,20 +199,21 @@ def make_topobathy_tiles(
 
     elif dataset is not None:
         dem_type = "xarray"
-        ds_lon = dataset[dataarray_x_name].values    
-        ds_lat = dataset[dataarray_y_name].values
+        ds_lon = dataset[dataarray_x_name].to_numpy()
+        ds_lat = dataset[dataarray_y_name].to_numpy()
         ds_z_parameter = dataarray_name
         if "crs" not in dataset:
             dataset_crs_code = 4326
         else:
             dataset_crs_code = dataset.crs.attrs["epsg_code"]
-        transformer_3857_to_crs = Transformer.from_crs(CRS.from_epsg(3857), dataset_crs_code, always_xy=True)
+        transformer_3857_to_crs = Transformer.from_crs(
+            CRS.from_epsg(3857), dataset_crs_code, always_xy=True
+        )
         if lon_range is None:
             lon_range = [np.min(ds_lon), np.max(ds_lon)]
         if lat_range is None:
             lat_range = [np.min(ds_lat), np.max(ds_lat)]
-        dx = np.mean(np.diff(ds_lat)) * 111000.0    
-
+        dx = np.mean(np.diff(ds_lat)) * 111000.0
 
     if zoom_range is None:
         if dx_max_zoom is None:
@@ -211,7 +227,6 @@ def make_topobathy_tiles(
     npix = 256
 
     if make_highest_level:
-
         transformer_4326_to_3857 = Transformer.from_crs(
             CRS.from_epsg(4326), CRS.from_epsg(3857), always_xy=True
         )
@@ -233,34 +248,36 @@ def make_topobathy_tiles(
         xv, yv = np.meshgrid(xx, yy)
 
         # Determine min and max indices for this zoom level
-        # If the index path is given, then get ix0, ix1, iy0 and iy1 from the existing index files
-        # Otherwise, use lon_range and lat_range  
+        # If the index path is given, then get ix0, ix1, it0 and it1 from the existing index files
+        # Otherwise, use lon_range and lat_range
 
         if index_path:
             index_zoom_path = os.path.join(index_path, str(izoom))
             # List folders and turn names into integers
-            iy0 = 1e15
-            iy1 = -1e15
+            it0 = 1e15
+            it1 = -1e15
             ix_list = [int(i) for i in os.listdir(index_zoom_path)]
             ix0 = min(ix_list)
             ix1 = max(ix_list)
             # Now loop through the folders to get the min and max y indices
             for i in range(ix0, ix1 + 1):
-                iy_list = [int(j.split(".")[0]) for j in os.listdir(os.path.join(index_zoom_path, str(i)))]
-                iy0 = min(iy0, min(iy_list))
-                iy1 = max(iy1, max(iy_list))
+                it_list = [
+                    int(j.split(".")[0])
+                    for j in os.listdir(os.path.join(index_zoom_path, str(i)))
+                ]
+                it0 = min(it0, min(it_list))
+                it1 = max(it1, max(it_list))
         else:
-            ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-            ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+            ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
+            ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         ix0 = max(0, ix0)
-        iy0 = max(0, iy0)
+        it0 = max(0, it0)
         ix1 = min(2**izoom - 1, ix1)
-        iy1 = min(2**izoom - 1, iy1)
+        it1 = min(2**izoom - 1, it1)
 
         # Loop in x direction
         for i in range(ix0, ix1 + 1):
-
             print(f"Processing column {i - ix0 + 1} of {ix1 - ix0 + 1}")
 
             path_okay = False
@@ -271,10 +288,9 @@ def make_topobathy_tiles(
                 path_okay = True
 
             # Loop in y direction
-            for j in range(iy0, iy1 + 1):
-
+            for j in range(it0, it1 + 1):
                 # Create highest zoom level tile
-                
+
                 file_name = os.path.join(zoom_path_i, str(j) + ".png")
                 if os.path.exists(file_name):
                     if skip_existing:
@@ -282,15 +298,17 @@ def make_topobathy_tiles(
                         continue
                     else:
                         # Read the tile
-                        zg0 = png2elevation(file_name,
-                                            encoder=encoder,
-                                            encoder_vmin=encoder_vmin,
-                                            encoder_vmax=encoder_vmax)
+                        zg0 = png2elevation(
+                            file_name,
+                            encoder=encoder,
+                            encoder_vmin=encoder_vmin,
+                            encoder_vmax=encoder_vmax,
+                        )
                         pass
                 else:
                     # Tile does not exist
                     zg0 = np.zeros((npix, npix))
-                    zg0[:] = np.nan    
+                    zg0[:] = np.nan
 
                 if index_path:
                     # Only make tiles for which there is an index file
@@ -366,7 +384,7 @@ def make_topobathy_tiles(
                     # Get the dataset within the range
                     xd = ds_lon[i0:i1]
                     yd = ds_lat[j0:j1]
-                    zd = dataset[ds_z_parameter][j0:j1, i0:i1].values[:]
+                    zd = dataset[ds_z_parameter][j0:j1, i0:i1].to_numpy()[:]
                     zg = interp2(xd, yd, zd, xg, yg, method=interpolation_method)
 
                 if np.isnan(zg).all():
@@ -382,11 +400,14 @@ def make_topobathy_tiles(
                 zg[mask] = zg0[mask]
 
                 # Write to terrarium png format
-                elevation2png(zg, file_name,
-                              compress_level=compress_level,
-                              encoder=encoder,
-                              encoder_vmin=encoder_vmin,
-                              encoder_vmax=encoder_vmax)
+                elevation2png(
+                    zg,
+                    file_name,
+                    compress_level=compress_level,
+                    encoder=encoder,
+                    encoder_vmin=encoder_vmin,
+                    encoder_vmax=encoder_vmax,
+                )
 
         t1 = time.time()
 
@@ -396,11 +417,9 @@ def make_topobathy_tiles(
     # Done with highest zoom level
 
     if make_lower_levels:
-
         # Now loop through other zoom levels starting with highest minus 1
 
         for izoom in range(zoom_range[1] - 1, zoom_range[0] - 1, -1):
-
             if not quiet:
                 print("Processing zoom level " + str(izoom))
 
@@ -415,28 +434,30 @@ def make_topobathy_tiles(
             if index_path:
                 index_zoom_path = os.path.join(index_path, str(izoom))
                 # List folders and turn names into integers
-                iy0 = 1e15
-                iy1 = -1e15
+                it0 = 1e15
+                it1 = -1e15
                 ix_list = [int(i) for i in os.listdir(index_zoom_path)]
                 ix0 = min(ix_list)
                 ix1 = max(ix_list)
                 # Now loop through the folders to get the min and max y indices
                 for i in range(ix0, ix1 + 1):
-                    iy_list = [int(j.split(".")[0]) for j in os.listdir(os.path.join(index_zoom_path, str(i)))]
-                    iy0 = min(iy0, min(iy_list))
-                    iy1 = max(iy1, max(iy_list))
+                    it_list = [
+                        int(j.split(".")[0])
+                        for j in os.listdir(os.path.join(index_zoom_path, str(i)))
+                    ]
+                    it0 = min(it0, min(it_list))
+                    it1 = max(it1, max(it_list))
             else:
-                ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-                ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+                ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
+                ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
 
             ix0 = max(0, ix0)
-            iy0 = max(0, iy0)
+            it0 = max(0, it0)
             ix1 = min(2**izoom - 1, ix1)
-            iy1 = min(2**izoom - 1, iy1)
+            it1 = min(2**izoom - 1, it1)
 
             # Loop in x direction
             for i in range(ix0, ix1 + 1):
-
                 path_okay = False
                 zoom_path_i = os.path.join(zoom_path, str(i))
 
@@ -447,15 +468,23 @@ def make_topobathy_tiles(
 
                 # Loop in y direction
                 with ThreadPool() as pool:
-                    pool.starmap(make_lower_level_tile, [(zoom_path_i,
-                          zoom_path_higher,
-                          i,
-                          j,
-                          npix,
-                          encoder,
-                          encoder_vmin,
-                          encoder_vmax,
-                          compress_level) for j in range(iy0, iy1 + 1)])
+                    pool.starmap(
+                        make_lower_level_tile,
+                        [
+                            (
+                                zoom_path_i,
+                                zoom_path_higher,
+                                i,
+                                j,
+                                npix,
+                                encoder,
+                                encoder_vmin,
+                                encoder_vmax,
+                                compress_level,
+                            )
+                            for j in range(it0, it1 + 1)
+                        ],
+                    )
 
             t1 = time.time()
 
@@ -467,9 +496,7 @@ def make_topobathy_tiles(
         write_html(os.path.join(path, "index.html"), max_native_zoom=zoom_range[1])
 
     if write_metadata:
-
-        if metadata is None:        
-
+        if metadata is None:
             metadata = {}
 
             metadata["longname"] = long_name
@@ -505,7 +532,9 @@ def make_topobathy_tiles(
             metadata["description"]["email"] = "Your email here"
             metadata["description"]["version"] = "1.0"
             metadata["description"]["terms_for_use"] = "Use as you like"
-            metadata["description"]["disclaimer"] = "These data are made available in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+            metadata["description"]["disclaimer"] = (
+                "These data are made available in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+            )
 
         # Write to toml file
         # toml_file = os.path.join(path, name + ".tml")

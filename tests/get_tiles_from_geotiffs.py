@@ -57,9 +57,9 @@ s3_bucket="deltares-ddb"
 s3_key="data/bathymetry"
 s3_region="eu-west-1"
 
-name = "cudem_ninth_oregon"
-long_name = "CUDEM (9th degree) Oregon"
-source = "NOAA NCEI"
+name = "coned_puget_sound"
+long_name = "CoNED Puget Sound"
+source = "USGS"
 vertical_reference_level = "NAVD88"
 encoder="terrarium"
 dxmax = 10.0
@@ -69,7 +69,7 @@ path = os.path.join(dbpath, name)
 twm = TiledWebMap(path, name, parameter="elevation")
 
 # Loop through geotiffs
-datapath = r"c:\work\projects\delftdashboard\bathy_data\oregon"
+datapath = r"c:/work/projects/puget_sound/from_kees/topobathy"
 flist = fo.list_files(os.path.join(datapath, "*.tif"))
 for f in flist:
     print(f)

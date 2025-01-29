@@ -1,16 +1,20 @@
 # Flood map overlay new format
 import os
+
 import numpy as np
-from PIL import Image
 from matplotlib import cm
 from matplotlib.colors import LightSource
+from PIL import Image
 
-from .utils import deg2num
-from .utils import num2deg
-from .utils import get_zoom_level
-from .utils import list_folders
-from .utils import png2int
-from .utils import png2elevation
+from .utils import (
+    deg2num,
+    get_zoom_level,
+    list_folders,
+    num2deg,
+    png2elevation,
+    png2int,
+)
+
 
 def make_floodmap_overlay(
     valg,
@@ -69,13 +73,13 @@ def make_floodmap_overlay(
 
         izoom = get_zoom_level(npixels, lat_range, max_zoom)
 
-        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         index_zoom_path = os.path.join(index_path, str(izoom))
 
         nx = (ix1 - ix0 + 1) * 256
-        ny = (iy1 - iy0 + 1) * 256
+        ny = (it1 - it0 + 1) * 256
         zz = np.empty((ny, nx))
         zz[:] = np.nan
 
@@ -88,7 +92,7 @@ def make_floodmap_overlay(
             ifolder = str(i)
             index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
 
-            for j in range(iy0, iy1 + 1):
+            for j in range(it0, it1 + 1):
                 index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
 
                 if not os.path.exists(index_file):
@@ -133,7 +137,7 @@ def make_floodmap_overlay(
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
-                jj0 = (j - iy0) * 256
+                jj0 = (j - it0) * 256
                 jj1 = jj0 + 256
                 zz[jj0:jj1, ii0:ii1] = valt
 
@@ -161,15 +165,14 @@ def make_floodmap_overlay(
         if file_name:
             im.save(file_name)
 
-        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
-        lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)
+        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(ix1 + 1, it1 + 1, izoom)
 
         return [lon0, lon1], [lat0, lat1]
 
     except Exception as e:
         print(e)
         return None, None
-
 
 
 def make_data_overlay(
@@ -230,13 +233,13 @@ def make_data_overlay(
 
         izoom = get_zoom_level(npixels, lat_range, max_zoom)
 
-        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         index_zoom_path = os.path.join(index_path, str(izoom))
 
         nx = (ix1 - ix0 + 1) * 256
-        ny = (iy1 - iy0 + 1) * 256
+        ny = (it1 - it0 + 1) * 256
         zz = np.empty((ny, nx))
         zz[:] = np.nan
 
@@ -249,7 +252,7 @@ def make_data_overlay(
             ifolder = str(i)
             index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
 
-            for j in range(iy0, iy1 + 1):
+            for j in range(it0, it1 + 1):
                 index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
 
                 if not os.path.exists(index_file):
@@ -260,7 +263,7 @@ def make_data_overlay(
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
-                jj0 = (j - iy0) * 256
+                jj0 = (j - it0) * 256
                 jj1 = jj0 + 256
                 zz[jj0:jj1, ii0:ii1] = valt
 
@@ -288,14 +291,15 @@ def make_data_overlay(
         if file_name:
             im.save(file_name)
 
-        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
-        lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)
+        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(ix1 + 1, it1 + 1, izoom)
 
         return [lon0, lon1], [lat0, lat1], [caxis[0], caxis[1]]
 
     except Exception as e:
         print(e)
         return None, None
+
 
 # Topo overlay new format
 def make_topobathy_overlay(
@@ -338,13 +342,13 @@ def make_topobathy_overlay(
         for lev in levs:
             max_zoom = max(max_zoom, int(lev))
 
-        izoom = get_zoom_level(npixels, lat_range, max_zoom)   
+        izoom = get_zoom_level(npixels, lat_range, max_zoom)
 
-        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         nx = (ix1 - ix0 + 1) * 256
-        ny = (iy1 - iy0 + 1) * 256
+        ny = (it1 - it0 + 1) * 256
         zz = np.empty((ny, nx))
         zz[:] = np.nan
 
@@ -353,7 +357,7 @@ def make_topobathy_overlay(
 
         for i in range(ix0, ix1 + 1):
             ifolder = str(i)
-            for j in range(iy0, iy1 + 1):
+            for j in range(it0, it1 + 1):
                 # Read bathy
                 bathy_file = os.path.join(
                     topo_path, str(izoom), ifolder, str(j) + ".png"
@@ -365,7 +369,7 @@ def make_topobathy_overlay(
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
-                jj0 = (j - iy0) * 256
+                jj0 = (j - it0) * 256
                 jj1 = jj0 + 256
                 zz[jj0:jj1, ii0:ii1] = valt
 
@@ -388,7 +392,6 @@ def make_topobathy_overlay(
             im = Image.fromarray(rgb.reshape([ny, nx, 4]))
 
         else:
-
             # Two options here:
             # 1. color_scale_auto = True
             #   if color_scale_symmetric = True:
@@ -425,24 +428,28 @@ def make_topobathy_overlay(
 
             cmap = cm.get_cmap(color_map)
 
-            if hillshading: 
-                ls = LightSource(azdeg=hillshading_azimuth,
-                                 altdeg=hillshading_altitude)
+            if hillshading:
+                ls = LightSource(azdeg=hillshading_azimuth, altdeg=hillshading_altitude)
                 # Compute pixel size in meters
-                dxy = 156543.03 / 2 ** izoom
-                rgb = ls.shade(zz, cmap,
-                            vmin=c0,
-                            vmax=c1,
-                            dx=dxy,
-                            dy=dxy,
-                            vert_exag=hillshading_exaggeration,
-                            blend_mode="soft") * 255
+                dxy = 156543.03 / 2**izoom
+                rgb = (
+                    ls.shade(
+                        zz,
+                        cmap,
+                        vmin=c0,
+                        vmax=c1,
+                        dx=dxy,
+                        dy=dxy,
+                        vert_exag=hillshading_exaggeration,
+                        blend_mode="soft",
+                    )
+                    * 255
+                )
                 # rgb = rgb * 255
                 # rgb = rgb.astype(np.uint8)
                 im = Image.fromarray(rgb.astype(np.uint8))
 
             else:
-
                 zz = (zz - c0) / (c1 - c0)
                 zz[zz < 0.0] = 0.0
                 zz[zz > 1.0] = 1.0
@@ -451,15 +458,15 @@ def make_topobathy_overlay(
         if file_name:
             im.save(file_name)
 
-        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
-        lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)  # lat/lon coordinates of lower right cell
+        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(
+            ix1 + 1, it1 + 1, izoom
+        )  # lat/lon coordinates of lower right cell
         return [lon0, lon1], [lat0, lat1], [c0, c1]
 
     except Exception as e:
         print(e)
         return None, None, None
-
-
 
 
 # Topo overlay new format
@@ -500,7 +507,6 @@ def make_overlay(
     """
 
     if option == "val":
-
         # Make sure val is not None
         if val is None:
             raise ValueError("Error! Please provide a value for val.")
@@ -510,20 +516,18 @@ def make_overlay(
             max_zoom = max(max_zoom, int(lev))
 
     elif option == "topo":
-
         # Make sure topo_path is not None
         if topo_path is None:
-            raise ValueError("Error! Please provide topo_path.")    
+            raise ValueError("Error! Please provide topo_path.")
         max_zoom = 0
         levs = list_folders(os.path.join(topo_path, "*"), basename=True)
         for lev in levs:
             max_zoom = max(max_zoom, int(lev))
 
     else:
-
         # Must be floodmap
         if topo_path is None:
-            raise ValueError("Error! Please provide topo_path.")    
+            raise ValueError("Error! Please provide topo_path.")
         if val is None:
             raise ValueError("Error! Please provide a value for the water level.")
         max_zoom_1 = 0
@@ -534,7 +538,7 @@ def make_overlay(
         levs = list_folders(os.path.join(topo_path, "*"), basename=True)
         for lev in levs:
             max_zoom_2 = max(max_zoom_2, int(lev))
-        max_zoom = min(max_zoom_1, max_zoom_2)    
+        max_zoom = min(max_zoom_1, max_zoom_2)
 
     if option != "topo":
         # Flatten matrix
@@ -543,15 +547,15 @@ def make_overlay(
         val = np.append(val, np.nan)
 
     # Get zoom level
-    izoom = get_zoom_level(npixels, lat_range, max_zoom)   
+    izoom = get_zoom_level(npixels, lat_range, max_zoom)
 
-    # Get tile indices that need to be fetched  
-    ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
-    ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
+    # Get tile indices that need to be fetched
+    ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
+    ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
 
-    # Number of pixels in x and y direction 
+    # Number of pixels in x and y direction
     nx = (ix1 - ix0 + 1) * 256
-    ny = (iy1 - iy0 + 1) * 256
+    ny = (it1 - it0 + 1) * 256
 
     # Make empty array to store the values
     zz = np.empty((ny, nx))
@@ -562,15 +566,13 @@ def make_overlay(
 
     # Loop over x indices
     for i in range(ix0, ix1 + 1):
-
         ifolder = str(i)
 
         # Loop over y indices
-        for j in range(iy0, iy1 + 1):
-
+        for j in range(it0, it1 + 1):
             ii0 = (i - ix0) * 256
             ii1 = ii0 + 256
-            jj0 = (j - iy0) * 256
+            jj0 = (j - it0) * 256
             jj1 = jj0 + 256
 
             if option == "flood_map" or option == "topo":
@@ -592,8 +594,8 @@ def make_overlay(
                     # No indices for this tile, continue
                     continue
                 ind = png2int(index_file, np.size(val) - 1)
-                valt = val[ind] - zb # water depth
-                valt[valt < 0.05] = np.nan # should make this configurable
+                valt = val[ind] - zb  # water depth
+                valt[valt < 0.05] = np.nan  # should make this configurable
 
             elif option == "topo":
                 # Get topo for this tile
@@ -601,11 +603,13 @@ def make_overlay(
 
             else:
                 # Get val for this tile
-                index_file = os.path.join(index_path, str(izoom), ifolder, str(j) + ".png")
+                index_file = os.path.join(
+                    index_path, str(izoom), ifolder, str(j) + ".png"
+                )
                 if not os.path.exists(index_file):
                     continue
                 ind = png2int(index_file, np.size(val) - 1)
-                valt = val[ind]    
+                valt = val[ind]
 
             zz[jj0:jj1, ii0:ii1] = valt
 
@@ -666,18 +670,23 @@ def make_overlay(
 
         cmap = cm.get_cmap(color_map)
 
-        if hillshading: 
-            ls = LightSource(azdeg=hillshading_azimuth,
-                             altdeg=hillshading_altitude)
+        if hillshading:
+            ls = LightSource(azdeg=hillshading_azimuth, altdeg=hillshading_altitude)
             # Compute pixel size in meters
-            dxy = 156543.03 / 2 ** izoom
-            rgb = ls.shade(zz, cmap,
-                        vmin=c0,
-                        vmax=c1,
-                        dx=dxy,
-                        dy=dxy,
-                        vert_exag=hillshading_exaggeration,
-                        blend_mode="soft") * 255
+            dxy = 156543.03 / 2**izoom
+            rgb = (
+                ls.shade(
+                    zz,
+                    cmap,
+                    vmin=c0,
+                    vmax=c1,
+                    dx=dxy,
+                    dy=dxy,
+                    vert_exag=hillshading_exaggeration,
+                    blend_mode="soft",
+                )
+                * 255
+            )
             im = Image.fromarray(rgb.astype(np.uint8))
 
         else:
@@ -689,11 +698,12 @@ def make_overlay(
     if file_name:
         im.save(file_name)
 
-    lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
-    lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)  # lat/lon coordinates of lower right cell
+    lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
+    lat0, lon1 = num2deg(
+        ix1 + 1, it1 + 1, izoom
+    )  # lat/lon coordinates of lower right cell
     return im, [lon0, lon1], [lat0, lat1], [c0, c1]
 
     # except Exception as e:
     #     print(e)
     #     return None, None, None
-

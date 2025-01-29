@@ -199,8 +199,11 @@ class TiledWebMap:
         # Compute x and y coordinates
         x0, y0 = num2xy(ix0, it1 + 1, izoom)  # lower left
         x1, y1 = num2xy(ix1 + 1, it0, izoom)  # upper right
-        x = np.linspace(x0, x1, nx)
-        y = np.linspace(y0, y1, ny)
+        # Data is stored in centres of pixels so we need to shift the coordinates
+        dx = (x1 - x0) / nx
+        dy = (y1 - y0) / ny
+        x = np.linspace(x0 + 0.5 * dx, x1 - 0.5 * dx, nx)
+        y = np.linspace(y0 + 0.5 * dy, y1 - 0.5 * dy, ny)
         z = np.flipud(z)
 
         return x, y, z

@@ -56,9 +56,9 @@ def test_get_tiles_from_geotiffs():
     s3_key = "data/bathymetry"
     s3_region = "eu-west-1"
 
-    name = "cudem_ninth_oregon"
-    long_name = "CUDEM (9th degree) Oregon"
-    source = "NOAA NCEI"
+    name = "coned_puget_sound"
+    long_name = "CoNED Puget Sound"
+    source = "USGS"
     vertical_reference_level = "NAVD88"
     encoder = "terrarium"
     dxmax = 10.0
@@ -68,7 +68,7 @@ def test_get_tiles_from_geotiffs():
     twm = TiledWebMap(path, name, parameter="elevation")
 
     # Loop through geotiffs
-    datapath = r"c:\work\projects\delftdashboard\bathy_data\oregon"
+    datapath = r"c:/work/projects/puget_sound/from_kees/topobathy"
     flist = fo.list_files(os.path.join(datapath, "*.tif"))
     for f in flist:
         print(f)
@@ -89,36 +89,36 @@ def test_get_tiles_from_geotiffs():
             y = np.flip(y)
             z = np.flip(z, axis=0)
 
-        # Create xarray dataset
-        ds = xr.Dataset({"elevation": (["y", "x"], z)}, coords={"x": x, "y": y})
-        ds["crs"] = src.crs
-        ds.crs.attrs["epsg_code"] = src.crs.to_epsg()
-        # ds = xr.open_dataset(ncfile)
-        twm.generate_topobathy_tiles(
-            dataset=ds,
-            dataarray_name="elevation",
-            dataarray_x_name="x",
-            dataarray_y_name="y",
-            dx_max_zoom=dxmax,
-            quiet=False,
-            make_webviewer=True,
-            write_metadata=True,
-            skip_existing=False,
-            interpolation_method="linear",
-            encoder=encoder,
-            name=name,
-            long_name=long_name,
-            source=source,
-            vertical_reference_level=vertical_reference_level,
-            vertical_units="m",
-            difference_with_msl=0.0,
-            s3_bucket=s3_bucket,
-            s3_key=f"{s3_key}/{name}",
-            make_available_file=True,
-            s3_region=s3_region,
-        )
+            # Create xarray dataset
+            ds = xr.Dataset({"elevation": (["y", "x"], z)}, coords={"x": x, "y": y})
+            ds["crs"] = src.crs
+            ds.crs.attrs["epsg_code"] = src.crs.to_epsg()
+            # ds = xr.open_dataset(ncfile)
+            twm.generate_topobathy_tiles(
+                dataset=ds,
+                dataarray_name="elevation",
+                dataarray_x_name="x",
+                dataarray_y_name="y",
+                dx_max_zoom=dxmax,
+                quiet=False,
+                make_webviewer=True,
+                write_metadata=True,
+                skip_existing=False,
+                interpolation_method="linear",
+                encoder=encoder,
+                name=name,
+                long_name=long_name,
+                source=source,
+                vertical_reference_level=vertical_reference_level,
+                vertical_units="m",
+                difference_with_msl=0.0,
+                s3_bucket=s3_bucket,
+                s3_key=f"{s3_key}/{name}",
+                make_available_file=True,
+                s3_region=s3_region,
+            )
 
-        ds.close()
+            ds.close()
 
     # TODO asserts
 

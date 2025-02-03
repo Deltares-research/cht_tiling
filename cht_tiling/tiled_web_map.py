@@ -15,7 +15,9 @@ import xarray as xr
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from cht_tiling.topobathy import make_topobathy_tiles
+from cht_tiling.topobathy import make_topobathy_tiles_top_level, make_topobathy_tiles_lower_levels
+from cht_tiling.webviewer import write_html
+
 from cht_tiling.utils import (
     get_zoom_level_for_resolution,
     list_files,
@@ -43,6 +45,7 @@ class TiledWebMap:
         self.name = name
         self.path = path
         self.url = None
+        self.npix = 256
         self.parameter = "elevation"
         self.encoder = "terrarium"
         self.encoder_vmin = None
@@ -109,18 +112,18 @@ class TiledWebMap:
         izoom = min(izoom, self.max_zoom)
 
         # Determine the indices of required tiles
-        ix0, it0 = xy2num(xl[0], yl[1], izoom)
-        ix1, it1 = xy2num(xl[1], yl[0], izoom)
+        ix0, iy0 = xy2num(xl[0], yl[1], izoom)
+        ix1, iy1 = xy2num(xl[1], yl[0], izoom)
 
         # Make sure indices are within bounds
         ix0 = max(0, ix0)
-        it0 = max(0, it0)
+        it0 = max(0, iy0)
         ix1 = min(2**izoom - 1, ix1)
-        it1 = min(2**izoom - 1, it1)
+        iy1 = min(2**izoom - 1, iy1)
 
         # Create empty array
         nx = (ix1 - ix0 + 1) * 256
-        ny = (it1 - it0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
         z = np.empty((ny, nx))
         z[:] = np.nan
 
@@ -131,7 +134,7 @@ class TiledWebMap:
         if self.download:
             for i in range(ix0, ix1 + 1):
                 ifolder = str(i)
-                for j in range(it0, it1 + 1):
+                for j in range(it0, iy1 + 1):
                     png_file = os.path.join(
                         self.path, str(izoom), ifolder, str(j) + ".png"
                     )
@@ -175,7 +178,7 @@ class TiledWebMap:
         # Loop over required tiles
         for i in range(ix0, ix1 + 1):
             ifolder = str(i)
-            for j in range(it0, it1 + 1):
+            for j in range(iy0, iy1 + 1):
                 png_file = os.path.join(self.path, str(izoom), ifolder, str(j) + ".png")
 
                 if not os.path.exists(png_file):
@@ -192,13 +195,13 @@ class TiledWebMap:
                 # Fill array
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
-                jj0 = (j - it0) * 256
+                jj0 = (j - iy0) * 256
                 jj1 = jj0 + 256
                 z[jj0:jj1, ii0:ii1] = valt
 
         # Compute x and y coordinates
-        x0, y0 = num2xy(ix0, it1 + 1, izoom)  # lower left
-        x1, y1 = num2xy(ix1 + 1, it0, izoom)  # upper right
+        x0, y0 = num2xy(ix0, iy1 + 1, izoom)  # lower left
+        x1, y1 = num2xy(ix1 + 1, iy0, izoom)  # upper right
         # Data is stored in centres of pixels so we need to shift the coordinates
         dx = (x1 - x0) / nx
         dy = (y1 - y0) / ny
@@ -208,11 +211,46 @@ class TiledWebMap:
 
         return x, y, z
 
-    def generate_topobathy_tiles(self, **kwargs):
-        make_topobathy_tiles(self.path, **kwargs)
-        if "make_availability_file" in kwargs:
-            if kwargs["make_availability_file"]:
-                self.make_availability_file()
+    def generate_topobathy_tiles(self,
+                                 datalist,
+                                 index_path=None,
+                                 lon_range=None,
+                                 lat_range=None,
+                                 zoom_range=None,
+                                 make_webviewer=True,
+                                 write_metadata=True,
+                                 make_availability_file=True,
+                                 make_lower_levels=True,
+                                 make_highest_level=True,
+                                 skip_existing=False,
+                                 parallel=True,
+                                 interpolation_method="linear"):
+
+        if make_highest_level:
+            for data_dict in datalist:
+                # Can loop here around differet datasets
+                make_topobathy_tiles_top_level(self,
+                                               data_dict,
+                                               index_path=index_path,
+                                               lon_range=lon_range,
+                                               lat_range=lat_range,
+                                               zoom_range=zoom_range,
+                                               skip_existing=skip_existing,
+                                               parallel=parallel,
+                                               interpolation_method=interpolation_method)
+
+        if make_lower_levels:
+            make_topobathy_tiles_lower_levels(self,
+                                              skip_existing=skip_existing,
+                                              parallel=parallel)
+
+        # For anything but global datasets, make an availability file
+        if make_availability_file:
+            self.make_availability_file()
+        if write_metadata:
+            self.write_metadata()
+        if make_webviewer:
+            write_html(os.path.join(self.path, "index.html"), max_native_zoom=self.max_zoom)
 
     def check_availability(self, i, j, izoom):
         # Check if tile exists at all
@@ -326,3 +364,50 @@ class TiledWebMap:
         ds.to_netcdf(nc_file)
 
         ds.close()
+
+    def write_metadata(self):
+
+        metadata = {}
+
+        metadata["longname"] = self.long_name
+        metadata["format"] = "tiled_web_map"
+        metadata["encoder"] = self.encoder
+        if self.encoder_vmin is not None:
+            metadata["encoder_vmin"] = self.encoder_vmin
+        if self.encoder_vmax is not None:
+            metadata["encoder_vmax"] = self.encoder_vmax
+        metadata["url"] = self.url
+        if self.s3_bucket is not None:
+            metadata["s3_bucket"] = self.s3_bucket
+        if self.s3_key is not None:
+            metadata["s3_key"] = self.s3_key
+        if self.s3_region is not None:
+            metadata["s3_region"] = self.s3_region
+        metadata["max_zoom"] = self.max_zoom
+        metadata["interpolation_method"] = "linear"
+        metadata["source"] = self.source
+        metadata["coord_ref_sys_name"] = "WGS 84 / Pseudo-Mercator"
+        metadata["coord_ref_sys_kind"] = "projected"
+        metadata["vertical_reference_level"] = self.vertical_reference_level
+        metadata["vertical_units"] = self.vertical_units
+        metadata["difference_with_msl"] = self.difference_with_msl
+        metadata["available_tiles"] = True
+
+        metadata["description"] = {}
+        metadata["description"]["title"] = "LONG_NAME"
+        metadata["description"]["institution"] = "INST_NAME"
+        metadata["description"]["history"] = "created by : AUTHOR"
+        metadata["description"]["references"] = "No reference material available"
+        metadata["description"]["comment"] = "none"
+        metadata["description"]["email"] = "Your email here"
+        metadata["description"]["version"] = "1.0"
+        metadata["description"]["terms_for_use"] = "Use as you like"
+        metadata["description"]["disclaimer"] = (
+            "These data are made available in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+        )
+
+        # Write to toml file
+        # toml_file = os.path.join(path, name + ".tml")
+        toml_file = os.path.join(self.path, "metadata.tml")
+        with open(toml_file, "w") as f:
+            toml.dump(metadata, f)

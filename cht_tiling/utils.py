@@ -321,12 +321,12 @@ def png2elevation(png_file, encoder="terrarium", encoder_vmin=0.0, encoder_vmax=
         rgb = np.array(img.convert("RGB")).astype(float)
         elevation = (rgb[:, :, 0] * 256 + rgb[:, :, 1] + rgb[:, :, 2] / 256) - 32768.0
         # where val is less than -32767, set to NaN
-        elevation[elevation < -32767.0] = np.nan
+        elevation[np.where(elevation < -32767.0)] = np.nan
     elif encoder == "terrarium16":
         rgb = np.array(img.convert("RGB")).astype(float)
         elevation = (rgb[:, :, 0] * 256 + rgb[:, :, 1]) - 32768.0
         # where val is less than -32767, set to NaN
-        elevation[elevation < -32767.0] = np.nan
+        elevation[np.where(elevation < -32767.0)] = np.nan
     elif encoder == "uint8":
         rgb = np.array(img.convert("RGB")).astype(int)
         elevation = rgb[:, :, 0]
@@ -334,11 +334,11 @@ def png2elevation(png_file, encoder="terrarium", encoder_vmin=0.0, encoder_vmax=
     elif encoder == "uint16":
         rgb = np.array(img.convert("RGB")).astype(int)
         elevation = rgb[:, :, 0] * 256 + rgb[:, :, 1]
-        elevation[elevation == 65535] = -1
+        elevation[np.where(elevation == 65535)] = -1
     elif encoder == "uint24":
         rgb = np.array(img.convert("RGB")).astype(int)
         elevation = rgb[:, :, 0] * 65536 + rgb[:, :, 1] * 256 + rgb[:, :, 2]
-        elevation[elevation == 16777215] = -1
+        elevation[np.where(elevation == 16777215)] = -1
     elif encoder == "uint32":
         rgb = np.array(img.convert("RGBA")).astype(int)
         elevation = (
@@ -347,22 +347,22 @@ def png2elevation(png_file, encoder="terrarium", encoder_vmin=0.0, encoder_vmax=
             + rgb[:, :, 2] * 256
             + rgb[:, :, 3]
         )
-        elevation[elevation == 4294967295] = -1
+        elevation[np.where(elevation == 4294967295)] = -1
     elif encoder == "float8":
         rgb = np.array(img.convert("RGB")).astype(float)
         i = rgb[:, :, 0]
         elevation = encoder_vmin + (encoder_vmax - encoder_vmin) * i / 254
-        elevation[i == 0] = np.nan
+        elevation[np.where(i == 0)] = np.nan
     elif encoder == "float16":
         rgb = np.array(img.convert("RGB")).astype(float)
         i = rgb[:, :, 0] * 256 + rgb[:, :, 1]
         elevation = encoder_vmin + (encoder_vmax - encoder_vmin) * i / 65534
-        elevation[i == 0] = np.nan
+        elevation[np.where(i == 0)] = np.nan
     elif encoder == "float24":
         rgb = np.array(img.convert("RGB")).astype(float)
         i = rgb[:, :, 0] * 65536 + rgb[:, :, 1] * 256 + rgb[:, :, 2]
         elevation = encoder_vmin + (encoder_vmax - encoder_vmin) * i / 16777214
-        elevation[i == 0] = np.nan
+        elevation[np.where(i == 0)] = np.nan
     elif encoder == "float32":
         rgb = np.array(img.convert("RGBA")).astype(float)
         i = (
@@ -372,7 +372,7 @@ def png2elevation(png_file, encoder="terrarium", encoder_vmin=0.0, encoder_vmax=
             + rgb[:, :, 3]
         )
         elevation = encoder_vmin + (encoder_vmax - encoder_vmin) * i / 4294967294
-        elevation[i == 0] = np.nan
+        elevation[np.where(i == 0)] = np.nan
     return elevation
 
 

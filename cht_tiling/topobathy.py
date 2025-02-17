@@ -1,12 +1,10 @@
 import os
 import time
 from multiprocessing.pool import ThreadPool
+
 import numpy as np
-import xarray as xr
 import rioxarray
-import toml
-
-
+import xarray as xr
 from cht_utils.misc_tools import interp2
 from pyproj import CRS, Transformer
 
@@ -18,7 +16,9 @@ from cht_tiling.utils import (
     num2deg,
     png2elevation,
 )
+
 # from cht_tiling.webviewer import write_html
+
 
 def make_topobathy_tiles_top_level(
     twm,
@@ -60,14 +60,14 @@ def make_topobathy_tiles_top_level(
     if "zmin" in data_dict:
         zmin = data_dict["zmin"]
     if "zmax" in data_dict:
-        zmax = data_dict["zmax"]    
+        zmax = data_dict["zmax"]
     z_range = [zmin, zmax]
 
     # First we determine lon_range, lat_range, dx and crs_data
     # lon_range and lat_range are in geographic coordinates and are used to determine the bounding box of the tiles
     # dx is the resolution of the dataset in meters and is used to determine the zoom levels
     # crs_data is the CRS of the dataset and is used for the transformation between this crs and web mercator
-    
+
     if "twm" in data_dict:
         input_twm = data_dict["twm"]
         data_type = "twm"
@@ -75,7 +75,7 @@ def make_topobathy_tiles_top_level(
     elif "ncfile" in data_dict:
         # Read the netcdf file and get the data array
         ds = xr.open_dataset(data_dict["ncfile"])
-        da = ds[data_dict["dataarray_name"]]        
+        da = ds[data_dict["dataarray_name"]]
         data_type = "xarray"
 
     elif "da" in data_dict:
@@ -83,12 +83,11 @@ def make_topobathy_tiles_top_level(
         da = data_dict["da"]
         data_type = "xarray"
 
-    elif "tiffile" in data_dict:    
+    elif "tiffile" in data_dict:
         da = rioxarray.open_rasterio(data_dict["tiffile"])
         data_type = "xarray"
 
-    if data_type == "xarray":    
-
+    if data_type == "xarray":
         # Get the CRS
         crs_data = da.rio.crs
 
@@ -96,7 +95,7 @@ def make_topobathy_tiles_top_level(
         if crs_data.is_geographic:
             if not lon_range:
                 lon_range = [da.x.min(), da.x.max()]
-            if not lat_range:    
+            if not lat_range:
                 lat_range = [da.y.min(), da.y.max()]
             dx = np.mean(np.diff(da.y)) * 111000.0
 
@@ -106,9 +105,17 @@ def make_topobathy_tiles_top_level(
                 x_range = [da.x.min(), da.x.max()]
                 y_range = [da.y.min(), da.y.max()]
                 # Get lon/lat range
-                transformer = Transformer.from_crs(crs_data, CRS.from_epsg(4326), always_xy=True)
-                lon_range = [transformer.transform(x_range[0], y_range[0])[0], transformer.transform(x_range[1], y_range[1])[0]]
-                lat_range = [transformer.transform(x_range[0], y_range[0])[1], transformer.transform(x_range[1], y_range[1])[1]]
+                transformer = Transformer.from_crs(
+                    crs_data, CRS.from_epsg(4326), always_xy=True
+                )
+                lon_range = [
+                    transformer.transform(x_range[0], y_range[0])[0],
+                    transformer.transform(x_range[1], y_range[1])[0],
+                ]
+                lat_range = [
+                    transformer.transform(x_range[0], y_range[0])[1],
+                    transformer.transform(x_range[1], y_range[1])[1],
+                ]
             dx = np.abs(np.mean(np.diff(da.y)))
 
     transformer_3857_to_crs = Transformer.from_crs(
@@ -119,8 +126,8 @@ def make_topobathy_tiles_top_level(
     if zoom_range is None:
         zoom_max = get_zoom_level_for_resolution(dx * 0.5)
         zoom_range = [0, zoom_max]
-    twm.zoom_range = [0, zoom_max] 
-    twm.max_zoom = zoom_range[1]    
+    twm.zoom_range = [0, zoom_max]
+    twm.max_zoom = zoom_range[1]
 
     # Use highest zoom level
     izoom = zoom_range[1]
@@ -177,9 +184,8 @@ def make_topobathy_tiles_top_level(
     options["interpolation_method"] = interpolation_method
     options["z_range"] = z_range
 
-    # Loop in x direction 
+    # Loop in x direction
     for i in range(ix0, ix1 + 1):
-
         print(f"Processing column {i - ix0 + 1} of {ix1 - ix0 + 1}")
 
         zoom_path_i = os.path.join(zoom_path, str(i))
@@ -206,11 +212,13 @@ def make_topobathy_tiles_top_level(
                         for j in range(iy0, iy1 + 1)
                     ],
                 )
-        else:        
+        else:
             # Loop in y direction
             for j in range(iy0, iy1 + 1):
                 # Create highest zoom level tile
-                create_highest_zoom_level_tile(zoom_path_i, i, j, izoom, twm, da, data_type, options)
+                create_highest_zoom_level_tile(
+                    zoom_path_i, i, j, izoom, twm, da, data_type, options
+                )
 
         # If zoom_path_i is empty, then remove it again
         if not os.listdir(zoom_path_i):
@@ -222,18 +230,17 @@ def make_topobathy_tiles_top_level(
 
     # Done with highest zoom level
 
+
 def make_topobathy_tiles_lower_levels(
     twm,
     skip_existing=False,
     parallel=True,
 ):
-
     npix = 256
 
     # Now loop through other zoom levels starting with highest minus 1
 
     for izoom in range(twm.zoom_range[1] - 1, twm.zoom_range[0] - 1, -1):
-
         print("Processing zoom level " + str(izoom))
 
         # Determine elapsed time
@@ -255,12 +262,12 @@ def make_topobathy_tiles_lower_levels(
         #     ix1 = max(ix_list)
         #     # Now loop through the folders to get the min and max y indices
         #     for i in range(ix0, ix1 + 1):
-        #         iy_list = [
+        #         it_list = [
         #             int(j.split(".")[0])
         #             for j in os.listdir(os.path.join(index_zoom_path, str(i)))
         #         ]
-        #         iy0 = min(iy0, min(iy_list))
-        #         iy1 = max(iy1, max(iy_list))
+        #         iy0 = min(iy0, min(it_list))
+        #         iy1 = max(iy1, max(it_list))
         # else:
         #     ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
         #     iy1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
@@ -279,18 +286,20 @@ def make_topobathy_tiles_lower_levels(
         ix1 = int(ix1_higher / 2)
 
         # Now loop through the folders to get the min and max y indices
-        iy0_higher = 1e15
-        iy1_higher = -1e15
+        it0_higher = 1e15
+        it1_higher = -1e15
         for i in os.listdir(zoom_path_higher):
-            iy_list = [int(j.split(".")[0]) for j in os.listdir(os.path.join(zoom_path_higher, i))]
-            iy0_higher = min(iy0_higher, min(iy_list))
-            iy1_higher = max(iy1_higher, max(iy_list))
-        iy0 = int(iy0_higher / 2)
-        iy1 = int(iy1_higher / 2)
+            it_list = [
+                int(j.split(".")[0])
+                for j in os.listdir(os.path.join(zoom_path_higher, i))
+            ]
+            it0_higher = min(it0_higher, min(it_list))
+            it1_higher = max(it1_higher, max(it_list))
+        iy0 = int(it0_higher / 2)
+        iy1 = int(it1_higher / 2)
 
         # Loop in x direction
         for i in range(ix0, ix1 + 1):
-
             path_okay = False
             zoom_path_i = os.path.join(zoom_path, str(i))
 
@@ -320,11 +329,14 @@ def make_topobathy_tiles_lower_levels(
                 # Loop in y direction
                 for j in range(iy0, iy1 + 1):
                     # Create lower level tile
-                    make_lower_level_tile(zoom_path_i, zoom_path_higher, i, j, npix, twm)        
+                    make_lower_level_tile(
+                        zoom_path_i, zoom_path_higher, i, j, npix, twm
+                    )
 
         t1 = time.time()
 
         print("Elapsed time for zoom level " + str(izoom) + ": " + str(t1 - t0))
+
 
 def bbox_xy2latlon(x0, x1, y0, y1, crs):
     # Create a transformer
@@ -336,8 +348,10 @@ def bbox_xy2latlon(x0, x1, y0, y1, crs):
     lon_max, lat_max = transformer.transform(x1, y1)
     return lon_min, lon_max, lat_min, lat_max
 
-def create_highest_zoom_level_tile(zoom_path_i, i, j, izoom, twm, da, data_type, options):
 
+def create_highest_zoom_level_tile(
+    zoom_path_i, i, j, izoom, twm, da, data_type, options
+):
     file_name = os.path.join(zoom_path_i, str(j) + ".png")
     transformer_4326_to_3857 = options["transformer_4326_to_3857"]
     transformer_3857_to_crs = options["transformer_3857_to_crs"]
@@ -368,7 +382,9 @@ def create_highest_zoom_level_tile(zoom_path_i, i, j, izoom, twm, da, data_type,
 
     if options["index_path"]:
         # Only make tiles for which there is an index file
-        index_file_name = os.path.join(options["index_path"], str(izoom), str(i), str(j) + ".png")
+        index_file_name = os.path.join(
+            options["index_path"], str(izoom), str(i), str(j) + ".png"
+        )
         if not os.path.exists(index_file_name):
             return
 
@@ -464,19 +480,13 @@ def create_highest_zoom_level_tile(zoom_path_i, i, j, izoom, twm, da, data_type,
             # Get the dataset within the range
             yd = np.flip(da.y[j1:j0])
             if len(da.shape) == 2:
-                zd = np.flip(
-                    da[j1:j0, i0:i1].to_numpy()[:], axis=0
-                )
+                zd = np.flip(da[j1:j0, i0:i1].to_numpy()[:], axis=0)
             else:
-                zd = np.squeeze(
-                    np.flip(
-                        da[0, j1:j0, i0:i1].to_numpy()[:], axis=0
-                    )
-                )
+                zd = np.squeeze(np.flip(da[0, j1:j0, i0:i1].to_numpy()[:], axis=0))
         zg = interp2(xd, yd, zd, xg, yg, method=options["interpolation_method"])
 
     # Any value below zmin is set NaN
-    zg[np.where(zg < z_range[0])] = np.nan 
+    zg[np.where(zg < z_range[0])] = np.nan
     # Any value above zmax is set NaN
     zg[np.where(zg > z_range[1])] = np.nan
 
@@ -497,6 +507,7 @@ def create_highest_zoom_level_tile(zoom_path_i, i, j, izoom, twm, da, data_type,
         encoder_vmin=twm.encoder_vmin,
         encoder_vmax=twm.encoder_vmax,
     )
+
 
 def make_lower_level_tile(
     zoom_path_i,

@@ -15,9 +15,10 @@ import xarray as xr
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from cht_tiling.topobathy import make_topobathy_tiles_top_level, make_topobathy_tiles_lower_levels
-from cht_tiling.webviewer import write_html
-
+from cht_tiling.topobathy import (
+    make_topobathy_tiles_lower_levels,
+    make_topobathy_tiles_top_level,
+)
 from cht_tiling.utils import (
     get_zoom_level_for_resolution,
     list_files,
@@ -26,6 +27,7 @@ from cht_tiling.utils import (
     png2elevation,
     xy2num,
 )
+from cht_tiling.webviewer import write_html
 
 
 class ZoomLevel:
@@ -117,7 +119,7 @@ class TiledWebMap:
 
         # Make sure indices are within bounds
         ix0 = max(0, ix0)
-        it0 = max(0, iy0)
+        iy0 = max(0, iy0)
         ix1 = min(2**izoom - 1, ix1)
         iy1 = min(2**izoom - 1, iy1)
 
@@ -134,7 +136,7 @@ class TiledWebMap:
         if self.download:
             for i in range(ix0, ix1 + 1):
                 ifolder = str(i)
-                for j in range(it0, iy1 + 1):
+                for j in range(iy0, iy1 + 1):
                     png_file = os.path.join(
                         self.path, str(izoom), ifolder, str(j) + ".png"
                     )
@@ -211,38 +213,41 @@ class TiledWebMap:
 
         return x, y, z
 
-    def generate_topobathy_tiles(self,
-                                 datalist,
-                                 index_path=None,
-                                 lon_range=None,
-                                 lat_range=None,
-                                 zoom_range=None,
-                                 make_webviewer=True,
-                                 write_metadata=True,
-                                 make_availability_file=True,
-                                 make_lower_levels=True,
-                                 make_highest_level=True,
-                                 skip_existing=False,
-                                 parallel=True,
-                                 interpolation_method="linear"):
-
+    def generate_topobathy_tiles(
+        self,
+        datalist,
+        index_path=None,
+        lon_range=None,
+        lat_range=None,
+        zoom_range=None,
+        make_webviewer=True,
+        write_metadata=True,
+        make_availability_file=True,
+        make_lower_levels=True,
+        make_highest_level=True,
+        skip_existing=False,
+        parallel=True,
+        interpolation_method="linear",
+    ):
         if make_highest_level:
             for data_dict in datalist:
-                # Can loop here around differet datasets
-                make_topobathy_tiles_top_level(self,
-                                               data_dict,
-                                               index_path=index_path,
-                                               lon_range=lon_range,
-                                               lat_range=lat_range,
-                                               zoom_range=zoom_range,
-                                               skip_existing=skip_existing,
-                                               parallel=parallel,
-                                               interpolation_method=interpolation_method)
+                # Can loop here around different datasets
+                make_topobathy_tiles_top_level(
+                    self,
+                    data_dict,
+                    index_path=index_path,
+                    lon_range=lon_range,
+                    lat_range=lat_range,
+                    zoom_range=zoom_range,
+                    skip_existing=skip_existing,
+                    parallel=parallel,
+                    interpolation_method=interpolation_method,
+                )
 
         if make_lower_levels:
-            make_topobathy_tiles_lower_levels(self,
-                                              skip_existing=skip_existing,
-                                              parallel=parallel)
+            make_topobathy_tiles_lower_levels(
+                self, skip_existing=skip_existing, parallel=parallel
+            )
 
         # For anything but global datasets, make an availability file
         if make_availability_file:
@@ -250,7 +255,9 @@ class TiledWebMap:
         if write_metadata:
             self.write_metadata()
         if make_webviewer:
-            write_html(os.path.join(self.path, "index.html"), max_native_zoom=self.max_zoom)
+            write_html(
+                os.path.join(self.path, "index.html"), max_native_zoom=self.max_zoom
+            )
 
     def check_availability(self, i, j, izoom):
         # Check if tile exists at all
@@ -366,7 +373,6 @@ class TiledWebMap:
         ds.close()
 
     def write_metadata(self):
-
         metadata = {}
 
         metadata["longname"] = self.long_name

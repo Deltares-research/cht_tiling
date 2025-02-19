@@ -17,6 +17,7 @@ from botocore.client import Config
 
 from cht_tiling.topobathy import make_topobathy_tiles_top_level, make_topobathy_tiles_lower_levels
 from cht_tiling.webviewer import write_html
+from cht_tiling.indices import make_index_tiles
 
 from cht_tiling.utils import (
     get_zoom_level_for_resolution,
@@ -152,7 +153,10 @@ class TiledWebMap:
                         )
                         # Make sure the folder exists
                         if not os.path.exists(os.path.dirname(png_file)):
-                            os.makedirs(os.path.dirname(png_file))
+                            try:
+                                os.makedirs(os.path.dirname(png_file))
+                            except:
+                                pass    
 
             # Now download the missing tiles
             if len(download_file_list) > 0:
@@ -251,6 +255,9 @@ class TiledWebMap:
             self.write_metadata()
         if make_webviewer:
             write_html(os.path.join(self.path, "index.html"), max_native_zoom=self.max_zoom)
+
+    def generate_index_tiles(self, grid, zoom_range, format="png", webviewer=True):
+        make_index_tiles(grid, self.path, zoom_range=zoom_range, format=format, webviewer=webviewer)
 
     def check_availability(self, i, j, izoom):
         # Check if tile exists at all

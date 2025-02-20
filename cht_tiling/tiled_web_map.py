@@ -18,6 +18,7 @@ from botocore.client import Config
 from cht_tiling.topobathy import make_topobathy_tiles_top_level, make_topobathy_tiles_lower_levels
 from cht_tiling.webviewer import write_html
 from cht_tiling.indices import make_index_tiles
+# from cht_tiling.flood_map import make_flood_map_tiles
 
 from cht_tiling.utils import (
     get_zoom_level_for_resolution,
@@ -258,6 +259,9 @@ class TiledWebMap:
 
     def generate_index_tiles(self, grid, zoom_range, format="png", webviewer=True):
         make_index_tiles(grid, self.path, zoom_range=zoom_range, format=format, webviewer=webviewer)
+
+    def generate_flood_map_tiles(self):
+        pass
 
     def check_availability(self, i, j, izoom):
         # Check if tile exists at all

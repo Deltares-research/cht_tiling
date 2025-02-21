@@ -1,3 +1,4 @@
+import glob
 import os
 import time
 from multiprocessing.pool import ThreadPool
@@ -7,6 +8,7 @@ import rioxarray
 import xarray as xr
 from cht_utils.misc_tools import interp2
 from pyproj import CRS, Transformer
+from rasterio.transform import from_origin
 
 from cht_tiling.utils import (
     deg2num,
@@ -69,8 +71,9 @@ def make_topobathy_tiles_top_level(
     # crs_data is the CRS of the dataset and is used for the transformation between this crs and web mercator
 
     if "twm" in data_dict:
-        input_twm = data_dict["twm"]
+        twm_data = data_dict["twm"]
         data_type = "twm"
+        crs_data = CRS.from_epsg(3857)
 
     elif "ncfile" in data_dict:
         # Read the netcdf file and get the data array
@@ -84,12 +87,23 @@ def make_topobathy_tiles_top_level(
         data_type = "xarray"
 
     elif "tiffile" in data_dict:
+        # if "tfwfile" in data_dict:
+        #     # Read the transformation from the TFW file
+        #     tfw_path = data_dict["tfwfile"]
+        #     transform = read_tfw(tfw_path)
+        #     da = rioxarray.open_rasterio(data_dict["tiffile"], transform=transform)
+        # else:
+
         da = rioxarray.open_rasterio(data_dict["tiffile"])
         data_type = "xarray"
 
     if data_type == "xarray":
         # Get the CRS
         crs_data = da.rio.crs
+
+        if "crs" in data_dict:
+            # Override what was in the data array
+            crs_data = data_dict["crs"]
 
         # Get the lon and lat range and dx
         if crs_data.is_geographic:
@@ -118,9 +132,9 @@ def make_topobathy_tiles_top_level(
                 ]
             dx = np.abs(np.mean(np.diff(da.y)))
 
-    transformer_3857_to_crs = Transformer.from_crs(
-        CRS.from_epsg(3857), crs_data, always_xy=True
-    )
+        transformer_3857_to_crs = Transformer.from_crs(
+            CRS.from_epsg(3857), crs_data, always_xy=True
+        )
 
     # Determine zoom range
     if zoom_range is None:
@@ -176,6 +190,7 @@ def make_topobathy_tiles_top_level(
     # Add some stuff to options dict, which is used for parallel processing
     options = {}
     options["index_path"] = index_path
+    options["twm_data"] = twm_data
     options["transformer_4326_to_3857"] = transformer_4326_to_3857
     options["transformer_3857_to_crs"] = transformer_3857_to_crs
     options["xv"] = xv
@@ -183,6 +198,10 @@ def make_topobathy_tiles_top_level(
     options["dxy"] = dxy
     options["interpolation_method"] = interpolation_method
     options["z_range"] = z_range
+    if "xytrans" in data_dict:
+        options["xytrans"] = data_dict["xytrans"]
+    else:
+        options["xytrans"] = [0.0, 0.0]
 
     # Loop in x direction
     for i in range(ix0, ix1 + 1):
@@ -380,6 +399,10 @@ def create_highest_zoom_level_tile(
         zg0 = np.zeros((twm.npix, twm.npix))
         zg0[:] = np.nan
 
+    # If there are no NaNs, we can continue
+    if not np.any(np.isnan(zg0)):
+        return
+
     if options["index_path"]:
         # Only make tiles for which there is an index file
         index_file_name = os.path.join(
@@ -403,10 +426,29 @@ def create_highest_zoom_level_tile(
         # zg = bathymetry_database.get_bathymetry_on_grid(
         #     x3857, y3857, CRS.from_epsg(3857), dem_list
         # )
+    elif data_type == "twm":
+        png_file_name = os.path.join(
+            options["twm_data"].path, str(izoom), str(i), str(j) + ".png"
+        )
+        if os.path.exists(png_file_name):
+            # Easy, the tile exists
+            zg = png2elevation(png_file_name, encoder=options["twm_data"].encoder)
+        else:
+            xl = [x3857[0, 0], x3857[0, -1]]
+            yl = [y3857[-1, 0], y3857[0, 1]]
+            max_pixel_size = dxy
+            xd, yd, zd = options["twm_data"].get_data(xl, yl, max_pixel_size)
+            zg = interp2(
+                xd, yd, zd, x3857, y3857, method=options["interpolation_method"]
+            )
+
     elif data_type == "xarray":
         # Make grid of x3857 and y3857, and convert to crs of dataset
         # xg, yg = np.meshgrid(x3857, y3857)
         xg, yg = transformer_3857_to_crs.transform(x3857, y3857)
+        # Subtract xytrans
+        xg = xg - options["xytrans"][0]
+        yg = yg - options["xytrans"][1]
         # Get min and max of xg, yg
         xg_min = np.min(xg)
         xg_max = np.max(xg)
@@ -494,8 +536,8 @@ def create_highest_zoom_level_tile(
         # only nans in this tile
         return
 
-    # Overwrite zg with zg0 where not nan
-    mask = np.isnan(zg)
+    # Overwrite zg with zg0 where not zg0 is not nan
+    mask = np.isfinite(zg0)
     zg[mask] = zg0[mask]
 
     # Write to terrarium png format
@@ -602,3 +644,35 @@ def make_lower_level_tile(
         encoder_vmin=twm.encoder_vmin,
         encoder_vmax=twm.encoder_vmax,
     )
+
+
+# Function to read the TFW file and return the transformation
+def read_tfw(tfw_path):
+    with open(tfw_path, "r") as f:
+        lines = f.readlines()
+
+    # Extract the values from the TFW
+    cell_size_x = float(lines[0].strip())  # Pixel size in the X direction
+    rotation_x = float(lines[1].strip())  # Rotation in the X direction (usually 0)
+    rotation_y = float(lines[2].strip())  # Rotation in the Y direction (usually 0)
+    cell_size_y = float(
+        lines[3].strip()
+    )  # Pixel size in the Y direction (usually negative)
+    upper_left_x = float(lines[4].strip())  # X coordinate of the upper-left corner
+    upper_left_y = float(lines[5].strip())  # Y coordinate of the upper-left corner
+
+    # Return as an Affine transformation (for use with Rasterio)
+    return from_origin(upper_left_x, upper_left_y, cell_size_x, abs(cell_size_y))
+
+
+def list_folders(src, basename=False):
+    folder_list = []
+    full_list = glob.glob(src)
+    for item in full_list:
+        if os.path.isdir(item):
+            if basename:
+                folder_list.append(os.path.basename(item))
+            else:
+                folder_list.append(item)
+
+    return sorted(folder_list)

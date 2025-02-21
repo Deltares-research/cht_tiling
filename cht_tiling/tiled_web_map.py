@@ -7,6 +7,7 @@ Created on Thu May 27 14:51:04 2021
 
 import os
 from multiprocessing.pool import ThreadPool
+from pathlib import Path
 
 import boto3
 import numpy as np
@@ -15,6 +16,7 @@ import xarray as xr
 from botocore import UNSIGNED
 from botocore.client import Config
 
+from cht_tiling.indices import make_index_tiles
 from cht_tiling.topobathy import (
     make_topobathy_tiles_lower_levels,
     make_topobathy_tiles_top_level,
@@ -153,8 +155,8 @@ class TiledWebMap:
                             f"{self.s3_key}/{str(izoom)}/{ifolder}/{str(j)}.png"
                         )
                         # Make sure the folder exists
-                        if not os.path.exists(os.path.dirname(png_file)):
-                            os.makedirs(os.path.dirname(png_file))
+                        if not Path(png_file).parent.exists():
+                            Path(png_file).parent.mkdir(parents=True, exist_ok=True)
 
             # Now download the missing tiles
             if len(download_file_list) > 0:
@@ -258,6 +260,14 @@ class TiledWebMap:
             write_html(
                 os.path.join(self.path, "index.html"), max_native_zoom=self.max_zoom
             )
+
+    def generate_flood_map_tiles(self):
+        pass
+
+    def generate_index_tiles(self, grid, zoom_range, format="png", webviewer=True):
+        make_index_tiles(
+            grid, self.path, zoom_range=zoom_range, format=format, webviewer=webviewer
+        )
 
     def check_availability(self, i, j, izoom):
         # Check if tile exists at all

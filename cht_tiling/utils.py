@@ -404,7 +404,7 @@ def png2int(png_file, idummy):
     """Convert png to int array"""
     # Open the PNG image
     image = Image.open(png_file)
-    rgba = np.array(image.convert("RGBA"))
+    rgba = np.array(image.convert("RGBA")).astype(int)
     ind = (
         (rgba[:, :, 0] * 256**3)
         + (rgba[:, :, 1] * 256**2)

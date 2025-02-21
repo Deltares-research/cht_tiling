@@ -6,7 +6,7 @@ from matplotlib import cm
 from matplotlib.colors import LightSource
 from PIL import Image
 
-from .utils import (
+from cht_tiling.utils import (
     deg2num,
     get_zoom_level,
     list_folders,
@@ -73,13 +73,13 @@ def make_floodmap_overlay(
 
         izoom = get_zoom_level(npixels, lat_range, max_zoom)
 
-        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         index_zoom_path = os.path.join(index_path, str(izoom))
 
         nx = (ix1 - ix0 + 1) * 256
-        ny = (it1 - it0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
         zz = np.empty((ny, nx))
         zz[:] = np.nan
 
@@ -92,7 +92,7 @@ def make_floodmap_overlay(
             ifolder = str(i)
             index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
 
-            for j in range(it0, it1 + 1):
+            for j in range(iy0, iy1 + 1):
                 index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
 
                 if not os.path.exists(index_file):
@@ -137,7 +137,7 @@ def make_floodmap_overlay(
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
-                jj0 = (j - it0) * 256
+                jj0 = (j - iy0) * 256
                 jj1 = jj0 + 256
                 zz[jj0:jj1, ii0:ii1] = valt
 
@@ -165,8 +165,8 @@ def make_floodmap_overlay(
         if file_name:
             im.save(file_name)
 
-        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
-        lat0, lon1 = num2deg(ix1 + 1, it1 + 1, izoom)
+        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)
 
         return [lon0, lon1], [lat0, lat1]
 
@@ -233,13 +233,13 @@ def make_data_overlay(
 
         izoom = get_zoom_level(npixels, lat_range, max_zoom)
 
-        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         index_zoom_path = os.path.join(index_path, str(izoom))
 
         nx = (ix1 - ix0 + 1) * 256
-        ny = (it1 - it0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
         zz = np.empty((ny, nx))
         zz[:] = np.nan
 
@@ -252,7 +252,7 @@ def make_data_overlay(
             ifolder = str(i)
             index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
 
-            for j in range(it0, it1 + 1):
+            for j in range(iy0, iy1 + 1):
                 index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
 
                 if not os.path.exists(index_file):
@@ -263,7 +263,7 @@ def make_data_overlay(
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
-                jj0 = (j - it0) * 256
+                jj0 = (j - iy0) * 256
                 jj1 = jj0 + 256
                 zz[jj0:jj1, ii0:ii1] = valt
 
@@ -291,8 +291,8 @@ def make_data_overlay(
         if file_name:
             im.save(file_name)
 
-        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
-        lat0, lon1 = num2deg(ix1 + 1, it1 + 1, izoom)
+        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)
 
         return [lon0, lon1], [lat0, lat1], [caxis[0], caxis[1]]
 
@@ -344,11 +344,11 @@ def make_topobathy_overlay(
 
         izoom = get_zoom_level(npixels, lat_range, max_zoom)
 
-        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         nx = (ix1 - ix0 + 1) * 256
-        ny = (it1 - it0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
         zz = np.empty((ny, nx))
         zz[:] = np.nan
 
@@ -357,7 +357,7 @@ def make_topobathy_overlay(
 
         for i in range(ix0, ix1 + 1):
             ifolder = str(i)
-            for j in range(it0, it1 + 1):
+            for j in range(iy0, iy1 + 1):
                 # Read bathy
                 bathy_file = os.path.join(
                     topo_path, str(izoom), ifolder, str(j) + ".png"
@@ -369,7 +369,7 @@ def make_topobathy_overlay(
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
-                jj0 = (j - it0) * 256
+                jj0 = (j - iy0) * 256
                 jj1 = jj0 + 256
                 zz[jj0:jj1, ii0:ii1] = valt
 
@@ -458,9 +458,9 @@ def make_topobathy_overlay(
         if file_name:
             im.save(file_name)
 
-        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
+        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
         lat0, lon1 = num2deg(
-            ix1 + 1, it1 + 1, izoom
+            ix1 + 1, iy1 + 1, izoom
         )  # lat/lon coordinates of lower right cell
         return [lon0, lon1], [lat0, lat1], [c0, c1]
 
@@ -550,12 +550,12 @@ def make_overlay(
     izoom = get_zoom_level(npixels, lat_range, max_zoom)
 
     # Get tile indices that need to be fetched
-    ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
-    ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
+    ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+    ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
     # Number of pixels in x and y direction
     nx = (ix1 - ix0 + 1) * 256
-    ny = (it1 - it0 + 1) * 256
+    ny = (iy1 - iy0 + 1) * 256
 
     # Make empty array to store the values
     zz = np.empty((ny, nx))
@@ -569,10 +569,10 @@ def make_overlay(
         ifolder = str(i)
 
         # Loop over y indices
-        for j in range(it0, it1 + 1):
+        for j in range(iy0, iy1 + 1):
             ii0 = (i - ix0) * 256
             ii1 = ii0 + 256
-            jj0 = (j - it0) * 256
+            jj0 = (j - iy0) * 256
             jj1 = jj0 + 256
 
             if option == "flood_map" or option == "topo":
@@ -698,9 +698,9 @@ def make_overlay(
     if file_name:
         im.save(file_name)
 
-    lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
+    lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
     lat0, lon1 = num2deg(
-        ix1 + 1, it1 + 1, izoom
+        ix1 + 1, iy1 + 1, izoom
     )  # lat/lon coordinates of lower right cell
     return im, [lon0, lon1], [lat0, lat1], [c0, c1]
 

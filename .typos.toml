@@ -1,5 +1,14 @@
 [default.extend-words]
-# Ignore false-positives
 waring = "waring"
 fo = "fo"
 NED = "NED"
+iy0 = "iy0"
+iy1 = "iy1"
+
+
+[default.extend-identifiers]
+waring = "waring"
+fo = "fo"
+NED = "NED"
+iy0 = "iy0"
+iy1 = "iy1"

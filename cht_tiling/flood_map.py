@@ -1,22 +1,12 @@
 import os
-import glob
-import time
-from multiprocessing.pool import ThreadPool
+
 import numpy as np
-import xarray as xr
-import rioxarray
-import toml
-from rasterio.transform import from_origin
-
-
-from matplotlib import cm, colormaps
-from matplotlib.colors import LightSource
+from matplotlib import cm
 from PIL import Image
-from pyproj import CRS, Transformer
-from scipy.interpolate import RegularGridInterpolator
 
 import cht_tiling.fileops as fo
 from cht_tiling.utils import png2elevation, png2int
+
 
 def make_flood_map_tiles(
     valg,
@@ -138,10 +128,10 @@ def make_flood_map_tiles(
                 # if zbmx - zbmn < 5.0:
                 #     zb = np.full_like(zb, np.mean(zb))
 
-                valt = valt - zb           # depth = water level - topography
-                valt[valt < 0.10] = np.nan # 0.10 is the threshold for water level
+                valt = valt - zb  # depth = water level - topography
+                valt[valt < 0.10] = np.nan  # 0.10 is the threshold for water level
                 valt[zb < zbmax] = np.nan  # don't show flood in water areas
-                valt[noval] = np.nan       # don't show flood outside model domain  
+                valt[noval] = np.nan  # don't show flood outside model domain
 
             if color_values:
                 rgb = np.zeros((256 * 256, 4), "uint8")
@@ -165,7 +155,7 @@ def make_flood_map_tiles(
                 im = Image.fromarray(rgb)
 
             else:
-#                valt = np.flipud(valt.reshape([256, 256]))
+                #                valt = np.flipud(valt.reshape([256, 256]))
                 valt = valt.reshape([256, 256])
                 valt = (valt - caxis[0]) / (caxis[1] - caxis[0])
                 valt[valt < 0.0] = 0.0
@@ -214,7 +204,6 @@ def make_flood_map_tiles(
             png_zoom_path_i = os.path.join(png_zoom_path, ifolder)
 
             for jfile in fo.list_files(os.path.join(index_zoom_path_i, "*.png")):
-
                 jfile = os.path.basename(jfile)
                 j = int(jfile[:-4])
 
@@ -256,7 +245,6 @@ def make_flood_map_tiles(
                     rgb[0:128, 128:256, :] = rgb0[0:255:2, 0:255:2, :]
 
                 if okay:
-
                     im = Image.fromarray(rgb)
 
                     if not path_okay:

@@ -1,6 +1,7 @@
 import os
 import glob
 import time
+import math
 from multiprocessing.pool import ThreadPool
 import numpy as np
 import xarray as xr
@@ -16,7 +17,7 @@ from pyproj import CRS, Transformer
 from scipy.interpolate import RegularGridInterpolator
 
 import cht_tiling.fileops as fo
-from cht_tiling.utils import png2elevation, png2int
+from cht_tiling.utils import png2elevation, png2int, deg2num, num2deg
 
 def make_flood_map_tiles(
     valg,
@@ -276,3 +277,193 @@ def make_flood_map_tiles(
                     #                        im.show()
 
                     im.save(png_file)
+
+# Flood map overlay new format
+def make_flood_map_overlay_v2(
+    valg,
+    index_path,
+    topo_path,
+    npixels=[1200, 800],
+    lon_range=None,
+    lat_range=None,
+    option="deterministic",
+    color_values=None,
+    caxis=None,
+    zbmax=-999.0,
+    merge=True,
+    depth=None,
+    quiet=False,
+    file_name=None,
+):
+    """
+    Generates overlay PNG from tiles
+
+    :param valg: Name of the scenario to be run.
+    :type valg: array
+    :param index_path: Path where the index tiles are sitting.
+    :type index_path: str
+    :param png_path: Output path where the png tiles will be created.
+    :type png_path: str
+    :param option: Option to define the type of tiles to be generated.
+    Options are 'direct', 'floodmap', 'topography'. Defaults to 'direct',
+    in which case the values in *valg* are used directly.
+    :type option: str
+    :param zoom_range: Zoom range for which
+    the png tiles will be created.
+    Defaults to [0, 23].
+    :type zoom_range: list of int
+
+    """
+
+    try:
+        if isinstance(valg, list):
+            # Why would this ever be a list ?!
+            print("valg is a list!")
+            pass
+        elif isinstance(valg, xr.DataArray):
+            valg = valg.values            
+        else:
+            valg = valg.transpose().flatten()
+
+        # Check available levels in index tiles
+        max_zoom = 0
+        levs = fo.list_folders(os.path.join(index_path, "*"), basename=True)
+        for lev in levs:
+            max_zoom = max(max_zoom, int(lev))
+
+        # Find zoom level that provides sufficient pixels
+        for izoom in range(max_zoom + 1):
+            # ix0, it0 = deg2num(lat_range[0], lon_range[0], izoom)
+            # ix1, it1 = deg2num(lat_range[1], lon_range[1], izoom)
+            ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
+            ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
+            if (ix1 - ix0 + 1) * 256 > npixels[0] and (it1 - it0 + 1) * 256 > npixels[
+                1
+            ]:
+                # Found sufficient zoom level
+                break
+
+        index_zoom_path = os.path.join(index_path, str(izoom))
+
+        nx = (ix1 - ix0 + 1) * 256
+        ny = (it1 - it0 + 1) * 256
+        zz = np.empty((ny, nx))
+        zz[:] = np.nan
+
+        if not quiet:
+            print("Processing zoom level " + str(izoom))
+
+        index_zoom_path = os.path.join(index_path, str(izoom))
+
+        for i in range(ix0, ix1 + 1):
+            ifolder = str(i)
+            index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
+
+            for j in range(it0, it1 + 1):
+                index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
+
+                if not os.path.exists(index_file):
+                    continue
+
+                ind = png2int(index_file, -1)
+
+                if option == "probabilistic":
+                    # This needs to be fixed later on
+                    # valg is actually CDF interpolator to obtain probability of water level
+
+                    # Read bathy
+                    bathy_file = os.path.join(
+                        topo_path, str(izoom), ifolder, str(j) + ".png"
+                    )
+
+                    if not os.path.exists(bathy_file):
+                        # No bathy for this tile, continue
+                        continue
+
+                    zb = np.fromfile(bathy_file, dtype="f4")
+                    zs = zb + depth
+
+                    valt = valg[ind](zs)
+                    valt[ind < 0] = np.nan
+
+                else:
+                    # Read bathy
+                    bathy_file = os.path.join(
+                        topo_path, str(izoom), ifolder, str(j) + ".png"
+                    )
+                    if not os.path.exists(bathy_file):
+                        # No bathy for this tile, continue
+                        continue
+
+                    zb = png2elevation(bathy_file)
+
+                    valt = valg[ind]
+                    valt = valt - zb
+                    valt[valt < 0.05] = np.nan
+                    valt[zb < zbmax] = np.nan
+
+                ii0 = (i - ix0) * 256
+                ii1 = ii0 + 256
+                jj0 = (j - it0) * 256
+                jj1 = jj0 + 256
+                zz[jj0:jj1, ii0:ii1] = valt
+
+        if color_values:
+            # Create empty rgb array
+            zz = zz.flatten()
+            rgb = np.zeros((ny * nx, 4), "uint8")
+            # Determine value based on user-defined ranges
+            for color_value in color_values:
+                inr = np.logical_and(
+                    zz >= color_value["lower_value"], zz < color_value["upper_value"]
+                )
+                rgb[inr, 0] = color_value["rgb"][0]
+                rgb[inr, 1] = color_value["rgb"][1]
+                rgb[inr, 2] = color_value["rgb"][2]
+                rgb[inr, 3] = 255
+            im = Image.fromarray(rgb.reshape([ny, nx, 4]))
+
+        else:
+            if not caxis:
+                caxis = []
+                caxis.append(np.nanmin(valg))
+                caxis.append(np.nanmax(valg))
+
+            zz = (zz - caxis[0]) / (caxis[1] - caxis[0])
+            zz[zz < 0.0] = 0.0
+            zz[zz > 1.0] = 1.0
+            im = Image.fromarray(cm.jet(zz, bytes=True))
+            # # For any nan values, set alpha to 0
+            # # Get rgb values
+            # rgb = np.array(im)
+            # im.putalpha(255 * np.isnan(zz))
+
+        if file_name:
+            im.save(file_name)
+
+        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(ix1 + 1, it1 + 1, izoom)
+
+        return [lon0, lon1], [lat0, lat1], caxis
+
+    except Exception as e:
+        print(e)
+        traceback.print_exc()
+        return None, None
+
+# def deg2num(lat_deg, lon_deg, zoom):
+#     """Returns column and row index of slippy tile"""
+#     lat_rad = math.radians(lat_deg)
+#     n = 2**zoom
+#     xtile = int((lon_deg + 180.0) / 360.0 * n)
+#     ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+#     return (xtile, ytile)
+
+# def num2deg(xtile, ytile, zoom):
+#     """Returns upper left latitude and longitude of slippy tile"""
+#     # Return upper left corner of tile
+#     n = 2**zoom
+#     lon_deg = xtile / n * 360.0 - 180.0
+#     lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
+#     lat_deg = math.degrees(lat_rad)
+#     return (lat_deg, lon_deg)

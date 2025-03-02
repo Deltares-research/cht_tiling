@@ -283,7 +283,11 @@ def make_flood_map_overlay_v2(
     valg,
     index_path,
     topo_path,
+    zmax_minus_zmin=None,
+    mean_depth=None,
     npixels=[1200, 800],
+    hmin=0.10,
+    dzdx_mild=0.01,
     lon_range=None,
     lat_range=None,
     option="deterministic",
@@ -321,9 +325,24 @@ def make_flood_map_overlay_v2(
             print("valg is a list!")
             pass
         elif isinstance(valg, xr.DataArray):
-            valg = valg.values            
+            valg = valg.values
+            if mean_depth is not None:
+                mean_depth = mean_depth.values
+            if zmax_minus_zmin is not None:
+                zmax_minus_zmin = zmax_minus_zmin.values    
         else:
+            # valg is a 2D array
             valg = valg.transpose().flatten()
+            if mean_depth is not None:
+                mean_depth = mean_depth.transpose().flatten()
+            if zmax_minus_zmin is not None:
+                zmax_minus_zmin = zmax_minus_zmin.transpose().flatten()
+
+        if mean_depth is not None and zmax_minus_zmin is not None:
+            # Mean depth is obtained from SFINCS as volume over cell area
+            # zmax_minus_zmin is the difference between zmax and zmin in the cell
+            # Set mean_depth to NaN where zmax_minus_zmin is greater than dzmild
+            mean_depth[(zmax_minus_zmin > dzdx_mild)] = np.nan
 
         # Check available levels in index tiles
         max_zoom = 0
@@ -397,10 +416,19 @@ def make_flood_map_overlay_v2(
 
                     zb = png2elevation(bathy_file)
 
-                    valt = valg[ind]
-                    valt = valt - zb
-                    valt[valt < 0.05] = np.nan
-                    valt[zb < zbmax] = np.nan
+                    valt = valg[ind] # water level in pixels
+
+                    valt = valt - zb # water depth in pixels 
+
+                    # Now we override pixels values in very mild sloping cells with mean depth
+                    if mean_depth is not None:
+                        # Compute mean depth as volume over cell area                        
+                        mean_depth_p = mean_depth[ind]
+                        # Override valt with mean_depth_p where mean_depth_p is not NaN
+                        valt[~np.isnan(mean_depth_p)] = mean_depth_p[~np.isnan(mean_depth_p)]
+
+                    valt[valt < hmin] = np.nan # set to nan if water depth is less than hmin
+                    valt[zb < zbmax] = np.nan  # don't show flood in water areas
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256

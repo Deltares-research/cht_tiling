@@ -440,6 +440,7 @@ def makedir(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
+
 def list_files(src):
     file_list = []
     full_list = glob.glob(src)
@@ -447,6 +448,7 @@ def list_files(src):
         if os.path.isfile(item):
             file_list.append(item)
     return file_list
+
 
 def list_folders(src, basename=False):
     folder_list = []
@@ -461,6 +463,7 @@ def list_folders(src, basename=False):
 
     return folder_list
 
+
 def interp2(x0, y0, z0, x1, y1):
     f = RegularGridInterpolator((y0, x0), z0, bounds_error=False, fill_value=np.nan)
     # reshape x1 and y1
@@ -470,6 +473,7 @@ def interp2(x0, y0, z0, x1, y1):
     # interpolate
     z1 = f((y1, x1)).reshape(sz)
     return z1
+
 
 def binary_search(val_array, vals):
     indx = np.searchsorted(val_array, vals)  # ind is size of vals

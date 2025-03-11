@@ -520,9 +520,9 @@ def make_floodmap_tiles(
 
 #     # Find zoom level that provides sufficient pixels
 #     for izoom in range(max_zoom + 1):
-#         ix0, it0 = deg2num(lat_range[0], lon_range[0], izoom)
-#         ix1, it1 = deg2num(lat_range[1], lon_range[1], izoom)
-#         if (ix1 - ix0 + 1) * 256 > npixels[0] and (it1 - it0 + 1) * 256 > npixels[1]:
+#         ix0, iy0 = deg2num(lat_range[0], lon_range[0], izoom)
+#         ix1, iy1 = deg2num(lat_range[1], lon_range[1], izoom)
+#         if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[1]:
 #             # Found sufficient zoom level
 #             break
 
@@ -534,7 +534,7 @@ def make_floodmap_tiles(
 #     #    xv, yv = np.meshgrid(xx, yy)
 
 #     nx = (ix1 - ix0 + 1) * 256
-#     ny = (it1 - it0 + 1) * 256
+#     ny = (iy1 - iy0 + 1) * 256
 #     zz = np.empty((ny, nx))
 #     zz[:] = np.nan
 
@@ -547,7 +547,7 @@ def make_floodmap_tiles(
 #         ifolder = str(i)
 #         index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
 
-#         for j in range(it0, it1 + 1):
+#         for j in range(iy0, iy1 + 1):
 #             index_file = os.path.join(index_zoom_path_i, str(j) + ".dat")
 
 #             if not os.path.exists(index_file):
@@ -590,7 +590,7 @@ def make_floodmap_tiles(
 
 #             ii0 = (i - ix0) * 256
 #             ii1 = ii0 + 256
-#             jj0 = (it1 - j) * 256
+#             jj0 = (iy1 - j) * 256
 #             jj1 = jj0 + 256
 #             zz[jj0:jj1, ii0:ii1] = np.flipud(valt.reshape([256, 256]))
 
@@ -625,8 +625,8 @@ def make_floodmap_tiles(
 #         # Save the image
 #         im.save(file_name)
 
-#     lat0, lon0 = num2deg_ll(ix0, it0, izoom)  # lat/lon coordinates of lower left cell
-#     lat1, lon1 = num2deg_ur(ix1, it1, izoom)  # lat/lon coordinates of lower left cell
+#     lat0, lon0 = num2deg_ll(ix0, iy0, izoom)  # lat/lon coordinates of lower left cell
+#     lat1, lon1 = num2deg_ur(ix1, iy1, izoom)  # lat/lon coordinates of lower left cell
 #     return [lon0, lon1], [lat0, lat1]
 
 
@@ -688,13 +688,13 @@ def make_floodmap_overlay_v2(
 
         izoom = get_zoom_level(npixels, lon_range, lat_range, max_zoom)
 
-        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         index_zoom_path = os.path.join(index_path, str(izoom))
 
         nx = (ix1 - ix0 + 1) * 256
-        ny = (it1 - it0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
         zz = np.empty((ny, nx))
         zz[:] = np.nan
 
@@ -707,7 +707,7 @@ def make_floodmap_overlay_v2(
             ifolder = str(i)
             index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
 
-            for j in range(it0, it1 + 1):
+            for j in range(iy0, iy1 + 1):
                 index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
 
                 if not os.path.exists(index_file):
@@ -752,7 +752,7 @@ def make_floodmap_overlay_v2(
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
-                jj0 = (j - it0) * 256
+                jj0 = (j - iy0) * 256
                 jj1 = jj0 + 256
                 zz[jj0:jj1, ii0:ii1] = valt
 
@@ -780,8 +780,8 @@ def make_floodmap_overlay_v2(
         if file_name:
             im.save(file_name)
 
-        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
-        lat0, lon1 = num2deg(ix1 + 1, it1 + 1, izoom)
+        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)
 
         return [lon0, lon1], [lat0, lat1]
 
@@ -827,14 +827,14 @@ def make_floodmap_overlay_v2(
 
 #     # Find zoom level that provides sufficient pixels
 #     for izoom in range(max_zoom + 1):
-#         ix0, it0 = deg2num(lat_range[0], lon_range[0], izoom)
-#         ix1, it1 = deg2num(lat_range[1], lon_range[1], izoom)
-#         if (ix1 - ix0 + 1) * 256 > npixels[0] and (it1 - it0 + 1) * 256 > npixels[1]:
+#         ix0, iy0 = deg2num(lat_range[0], lon_range[0], izoom)
+#         ix1, iy1 = deg2num(lat_range[1], lon_range[1], izoom)
+#         if (ix1 - ix0 + 1) * 256 > npixels[0] and (iy1 - iy0 + 1) * 256 > npixels[1]:
 #             # Found sufficient zoom level
 #             break
 
 #     nx = (ix1 - ix0 + 1) * 256
-#     ny = (it1 - it0 + 1) * 256
+#     ny = (iy1 - iy0 + 1) * 256
 #     zz = np.empty((ny, nx))
 #     zz[:] = np.nan
 
@@ -843,7 +843,7 @@ def make_floodmap_overlay_v2(
 
 #     for i in range(ix0, ix1 + 1):
 #         ifolder = str(i)
-#         for j in range(it0, it1 + 1):
+#         for j in range(iy0, iy1 + 1):
 #             # Read bathy
 #             bathy_file = os.path.join(topo_path, str(izoom), ifolder, str(j) + ".dat")
 #             if not os.path.exists(bathy_file):
@@ -853,7 +853,7 @@ def make_floodmap_overlay_v2(
 
 #             ii0 = (i - ix0) * 256
 #             ii1 = ii0 + 256
-#             jj0 = (it1 - j) * 256
+#             jj0 = (iy1 - j) * 256
 #             jj1 = jj0 + 256
 #             zz[jj0:jj1, ii0:ii1] = np.flipud(valt.reshape([256, 256]))
 
@@ -881,8 +881,8 @@ def make_floodmap_overlay_v2(
 #     if file_name:
 #         im.save(file_name)
 
-#     lat0, lon0 = num2deg_ll(ix0, it0, izoom)  # lat/lon coordinates of lower left cell
-#     lat1, lon1 = num2deg_ur(ix1, it1, izoom)  # lat/lon coordinates of lower left cell
+#     lat0, lon0 = num2deg_ll(ix0, iy0, izoom)  # lat/lon coordinates of lower left cell
+#     lat1, lon1 = num2deg_ur(ix1, iy1, izoom)  # lat/lon coordinates of lower left cell
 #     return [lon0, lon1], [lat0, lat1]
 
 
@@ -929,11 +929,11 @@ def make_topo_overlay_v2(
 
         izoom = get_zoom_level(npixels, lon_range, lat_range, max_zoom)
 
-        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         nx = (ix1 - ix0 + 1) * 256
-        ny = (it1 - it0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
         zz = np.empty((ny, nx))
         zz[:] = np.nan
 
@@ -942,7 +942,7 @@ def make_topo_overlay_v2(
 
         for i in range(ix0, ix1 + 1):
             ifolder = str(i)
-            for j in range(it0, it1 + 1):
+            for j in range(iy0, iy1 + 1):
                 # Read bathy
                 bathy_file = os.path.join(
                     topo_path, str(izoom), ifolder, str(j) + ".png"
@@ -954,7 +954,7 @@ def make_topo_overlay_v2(
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
-                jj0 = (j - it0) * 256
+                jj0 = (j - iy0) * 256
                 jj1 = jj0 + 256
                 zz[jj0:jj1, ii0:ii1] = valt
 
@@ -1040,8 +1040,8 @@ def make_topo_overlay_v2(
         if file_name:
             im.save(file_name)
 
-        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
-        lat0, lon1 = num2deg(ix1 + 1, it1 + 1, izoom)  # lat/lon coordinates of lower right cell
+        lat1, lon0 = num2deg(ix0, iy0, izoom)  # lat/lon coordinates of upper left cell
+        lat0, lon1 = num2deg(ix1 + 1, iy1 + 1, izoom)  # lat/lon coordinates of lower right cell
         return [lon0, lon1], [lat0, lat1], [c0, c1]
 
     except Exception as e:
@@ -1117,8 +1117,8 @@ def make_topobathy_tiles(
         yy = xx[:]
         xv, yv = np.meshgrid(xx, yy)
 
-        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
         # Loop in x direction
         for i in range(ix0, ix1 + 1):
@@ -1126,7 +1126,7 @@ def make_topobathy_tiles(
             zoom_path_i = os.path.join(zoom_path, str(i))
 
             # Loop in y direction
-            for j in range(it0, it1 + 1):
+            for j in range(iy0, iy1 + 1):
                 file_name = os.path.join(zoom_path_i, str(j) + ".png")
 
                 if index_path:

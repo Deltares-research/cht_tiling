@@ -1,23 +1,13 @@
 import os
-import glob
-import time
-import math
-from multiprocessing.pool import ThreadPool
+
 import numpy as np
 import xarray as xr
-import rioxarray
-import toml
-from rasterio.transform import from_origin
-
-
-from matplotlib import cm, colormaps
-from matplotlib.colors import LightSource
+from matplotlib import cm
 from PIL import Image
-from pyproj import CRS, Transformer
-from scipy.interpolate import RegularGridInterpolator
 
 import cht_tiling.fileops as fo
-from cht_tiling.utils import png2elevation, png2int, deg2num, num2deg
+from cht_tiling.utils import deg2num, num2deg, png2elevation, png2int
+
 
 def make_flood_map_tiles(
     valg,
@@ -139,10 +129,10 @@ def make_flood_map_tiles(
                 # if zbmx - zbmn < 5.0:
                 #     zb = np.full_like(zb, np.mean(zb))
 
-                valt = valt - zb           # depth = water level - topography
-                valt[valt < 0.10] = np.nan # 0.10 is the threshold for water level
+                valt = valt - zb  # depth = water level - topography
+                valt[valt < 0.10] = np.nan  # 0.10 is the threshold for water level
                 valt[zb < zbmax] = np.nan  # don't show flood in water areas
-                valt[noval] = np.nan       # don't show flood outside model domain  
+                valt[noval] = np.nan  # don't show flood outside model domain
 
             if color_values:
                 rgb = np.zeros((256 * 256, 4), "uint8")
@@ -166,7 +156,7 @@ def make_flood_map_tiles(
                 im = Image.fromarray(rgb)
 
             else:
-#                valt = np.flipud(valt.reshape([256, 256]))
+                #                valt = np.flipud(valt.reshape([256, 256]))
                 valt = valt.reshape([256, 256])
                 valt = (valt - caxis[0]) / (caxis[1] - caxis[0])
                 valt[valt < 0.0] = 0.0
@@ -215,7 +205,6 @@ def make_flood_map_tiles(
             png_zoom_path_i = os.path.join(png_zoom_path, ifolder)
 
             for jfile in fo.list_files(os.path.join(index_zoom_path_i, "*.png")):
-
                 jfile = os.path.basename(jfile)
                 j = int(jfile[:-4])
 
@@ -257,7 +246,6 @@ def make_flood_map_tiles(
                     rgb[0:128, 128:256, :] = rgb0[0:255:2, 0:255:2, :]
 
                 if okay:
-
                     im = Image.fromarray(rgb)
 
                     if not path_okay:
@@ -277,6 +265,7 @@ def make_flood_map_tiles(
                     #                        im.show()
 
                     im.save(png_file)
+
 
 # Flood map overlay new format
 def make_flood_map_overlay_v2(
@@ -325,11 +314,11 @@ def make_flood_map_overlay_v2(
             print("valg is a list!")
             pass
         elif isinstance(valg, xr.DataArray):
-            valg = valg.values
+            valg = valg.to_numpy()
             if mean_depth is not None:
-                mean_depth = mean_depth.values
+                mean_depth = mean_depth.to_numpy()
             if zmax_minus_zmin is not None:
-                zmax_minus_zmin = zmax_minus_zmin.values    
+                zmax_minus_zmin = zmax_minus_zmin.to_numpy()
         else:
             # valg is a 2D array
             valg = valg.transpose().flatten()
@@ -416,18 +405,22 @@ def make_flood_map_overlay_v2(
 
                     zb = png2elevation(bathy_file)
 
-                    valt = valg[ind] # water level in pixels
+                    valt = valg[ind]  # water level in pixels
 
-                    valt = valt - zb # water depth in pixels 
+                    valt = valt - zb  # water depth in pixels
 
                     # Now we override pixels values in very mild sloping cells with mean depth
                     if mean_depth is not None:
-                        # Compute mean depth as volume over cell area                        
+                        # Compute mean depth as volume over cell area
                         mean_depth_p = mean_depth[ind]
                         # Override valt with mean_depth_p where mean_depth_p is not NaN
-                        valt[~np.isnan(mean_depth_p)] = mean_depth_p[~np.isnan(mean_depth_p)]
+                        valt[~np.isnan(mean_depth_p)] = mean_depth_p[
+                            ~np.isnan(mean_depth_p)
+                        ]
 
-                    valt[valt < hmin] = np.nan # set to nan if water depth is less than hmin
+                    valt[valt < hmin] = (
+                        np.nan
+                    )  # set to nan if water depth is less than hmin
                     valt[zb < zbmax] = np.nan  # don't show flood in water areas
 
                 ii0 = (i - ix0) * 256
@@ -478,6 +471,7 @@ def make_flood_map_overlay_v2(
         print(e)
         traceback.print_exc()
         return None, None
+
 
 # def deg2num(lat_deg, lon_deg, zoom):
 #     """Returns column and row index of slippy tile"""

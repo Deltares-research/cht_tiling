@@ -218,6 +218,7 @@ class TiledWebMap:
     def generate_topobathy_tiles(
         self,
         datalist,
+        bathymetry_database=None,
         index_path=None,
         lon_range=None,
         lat_range=None,
@@ -232,19 +233,20 @@ class TiledWebMap:
         interpolation_method="linear",
     ):
         if make_highest_level:
-            for data_dict in datalist:
-                # Can loop here around different datasets
-                make_topobathy_tiles_top_level(
-                    self,
-                    data_dict,
-                    index_path=index_path,
-                    lon_range=lon_range,
-                    lat_range=lat_range,
-                    zoom_range=zoom_range,
-                    skip_existing=skip_existing,
-                    parallel=parallel,
-                    interpolation_method=interpolation_method,
-                )
+            # for data_dict in datalist:
+            # Can loop here around different datasets
+            make_topobathy_tiles_top_level(
+                self,
+                datalist,
+                bathymetry_database=bathymetry_database,
+                index_path=index_path,
+                lon_range=lon_range,
+                lat_range=lat_range,
+                zoom_range=zoom_range,
+                skip_existing=skip_existing,
+                parallel=parallel,
+                interpolation_method=interpolation_method,
+            )
 
         if make_lower_levels:
             make_topobathy_tiles_lower_levels(

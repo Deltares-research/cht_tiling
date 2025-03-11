@@ -1,7 +1,12 @@
 {
     "recommendations": [
         "ms-python.python",
+        "ms-python.vscode-pylance",
         "charliermarsh.ruff",
-        "njpwerner.autodocstring"
+        "ms-toolsai.jupyter",
+        "github.copilot",
+        "tamasfe.even-better-toml",
+        "aaron-bond.better-comments",
+        "sonarsource.sonarlint-vscode",
     ]
 }

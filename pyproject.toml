@@ -19,7 +19,7 @@ dependencies = ["numpy", "scipy", "matplotlib >= 3.9.0", "pyproj", "pillow", "xa
 dynamic = ["version"]
 
 [project.optional-dependencies]
-tests = ["pytest", "geopandas", "rasterio", "cht_bathymetry"]
+tests = ["pytest", "pytest-cov", "geopandas", "rasterio", "cht_bathymetry"]
 
 [tool.setuptools]
 zip-safe = true
@@ -33,7 +33,9 @@ include = ["cht_tiling"]
 [tool.setuptools.package-data]
 "cht_tiling" = ["py.typed"]
 
-# TODO
 [project.urls]
 Source = "https://github.com/Deltares-research/cht_tiling"
-#Documentation = "https://deltares.github.io/Ribasim"
+
+[tool.pytest.ini_options]
+addopts = "--cov cht_tiling --cov-report xml"
+testpaths = ["tests"]

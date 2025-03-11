@@ -51,9 +51,9 @@ jobs:
 
       - name: Upload coverage report
         if: matrix.coverage == true
-        if-no-files-found: error
         uses: actions/upload-artifact@v4
         with:
+          if-no-files-found: error
           name: coverage-report
           path: coverage.xml
 

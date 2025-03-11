@@ -113,16 +113,16 @@ def make_index_tiles_quadtree(grid, path, zoom_range, format):
         yy = xx[:]
         xv, yv = np.meshgrid(xx, yy)
 
-        ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
-        ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
+        ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
+        ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
         # ix1 = ix1 + 1
-        # it1 = it1 + 1
+        # iy1 = iy1 + 1
 
         for i in range(ix0, ix1 + 1):
             path_okay = False
             zoom_path_i = os.path.join(zoom_path, str(i))
 
-            for j in range(it0, it1 + 1):
+            for j in range(iy0, iy1 + 1):
                 file_name = os.path.join(zoom_path_i, str(j) + ".png")
 
                 # Compute lat/lon at upper left corner of tile

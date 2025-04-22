@@ -122,7 +122,7 @@ class TiledWebMap:
         # Make sure indices are within bounds
         ix0 = max(0, ix0)
         iy0 = max(0, iy0)
-        ix1 = min(2**izoom - 1, ix1)
+        # ix1 = min(2**izoom - 1, ix1)
         iy1 = min(2**izoom - 1, iy1)
 
         # Create empty array
@@ -137,7 +137,8 @@ class TiledWebMap:
 
         if self.download:
             for i in range(ix0, ix1 + 1):
-                ifolder = str(i)
+                itile = np.mod(i, 2**izoom)  # wrap around
+                ifolder = str(itile)
                 for j in range(iy0, iy1 + 1):
                     png_file = os.path.join(
                         self.path, str(izoom), ifolder, str(j) + ".png"
@@ -181,7 +182,8 @@ class TiledWebMap:
 
         # Loop over required tiles
         for i in range(ix0, ix1 + 1):
-            ifolder = str(i)
+            itile = np.mod(i, 2**izoom)  # wrap around
+            ifolder = str(itile)
             for j in range(iy0, iy1 + 1):
                 png_file = os.path.join(self.path, str(izoom), ifolder, str(j) + ".png")
 

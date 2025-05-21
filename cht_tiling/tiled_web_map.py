@@ -47,6 +47,7 @@ class TiledWebMap:
             )
 
         self.name = name
+        self.long_name = name
         self.path = path
         self.url = None
         self.npix = 256
@@ -59,6 +60,10 @@ class TiledWebMap:
         self.s3_bucket = None
         self.s3_key = None
         self.s3_region = None
+        self.source = "unknown"
+        self.vertical_reference_level = "MSL"
+        self.vertical_units = "m"
+        self.difference_with_msl = 0.0
         self.read_metadata()
         # Check if available_tiles.nc exists. If not, just read the folders to get the zoom range.
         nc_file = os.path.join(self.path, "available_tiles.nc")
@@ -219,12 +224,13 @@ class TiledWebMap:
 
     def generate_topobathy_tiles(
         self,
-        datalist,
+        data_list,
         bathymetry_database=None,
         index_path=None,
         lon_range=None,
         lat_range=None,
         zoom_range=None,
+        dx_max_zoom=None,
         make_webviewer=True,
         write_metadata=True,
         make_availability_file=True,
@@ -235,20 +241,32 @@ class TiledWebMap:
         interpolation_method="linear",
     ):
         if make_highest_level:
-            # for data_dict in datalist:
-            # Can loop here around different datasets
-            make_topobathy_tiles_top_level(
-                self,
-                datalist,
-                bathymetry_database=bathymetry_database,
-                index_path=index_path,
-                lon_range=lon_range,
-                lat_range=lat_range,
-                zoom_range=zoom_range,
-                skip_existing=skip_existing,
-                parallel=parallel,
-                interpolation_method=interpolation_method,
-            )
+            if zoom_range is None and index_path is None:
+                # Need to determine zoom range
+                if dx_max_zoom is None:
+                    # Need to determine dx_max_zoom from all the datasets
+                    # Loop through datasets in datalist to determine dxmin in metres
+                    dx_max_zoom = 3.0
+                else:
+                    # Find appropriate zoom level
+                    zoom_max = get_zoom_level_for_resolution(dx_max_zoom)
+                zoom_range = [0, zoom_max]    
+
+            # Now loop through datasets in data_list 
+            for idata, data_dict in enumerate(data_list):
+                print(f"Processing {data_dict['name']} ... ({idata + 1} of {len(data_list)})")
+                make_topobathy_tiles_top_level(
+                    self,
+                    data_dict,
+                    bathymetry_database=bathymetry_database,
+                    index_path=index_path,
+                    lon_range=lon_range,
+                    lat_range=lat_range,
+                    zoom_range=zoom_range,
+                    skip_existing=skip_existing,
+                    parallel=parallel,
+                    interpolation_method=interpolation_method,
+                )
 
         if make_lower_levels:
             make_topobathy_tiles_lower_levels(

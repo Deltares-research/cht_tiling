@@ -20,7 +20,7 @@ from cht_tiling.utils import (
 
 def make_topobathy_tiles_top_level(
     twm,
-    data_list,
+    data_dict,
     bathymetry_database=None,
     index_path=None,
     lon_range=None,
@@ -54,112 +54,23 @@ def make_topobathy_tiles_top_level(
         CRS.from_epsg(4326), CRS.from_epsg(3857), always_xy=True
     )
 
-    # # Set vertical range
-    # zmin = -20000.0
-    # zmax = 20000.0
-    # if "zmin" in data_dict:
-    #     zmin = data_dict["zmin"]
-    # if "zmax" in data_dict:
-    #     zmax = data_dict["zmax"]
-    # z_range = [zmin, zmax]
-
-    # First we determine lon_range, lat_range, dx and crs_data
-    # lon_range and lat_range are in geographic coordinates and are used to determine the bounding box of the tiles
-    # dx is the resolution of the dataset in meters and is used to determine the zoom levels
-    # crs_data is the CRS of the dataset and is used for the transformation between this crs and web mercator
-
-    # twm_data = None
-
-    # if "twm" in data_dict:
-    #     twm_data = data_dict["twm"]
-    #     data_type = "twm"
-    #     crs_data = CRS.from_epsg(3857)
-
-    # elif "ncfile" in data_dict:
-    #     # Read the netcdf file and get the data array
-    #     ds = xr.open_dataset(data_dict["ncfile"])
-    #     da = ds[data_dict["dataarray_name"]]
-    #     data_type = "xarray"
-
-    # elif "da" in data_dict:
-    #     # XArray dataarray as input
-    #     da = data_dict["da"]
-    #     data_type = "xarray"
-
-    # elif "tiffile" in data_dict:
-
-    #     # if "tfwfile" in data_dict:
-    #     #     # Read the transformation from the TFW file
-    #     #     tfw_path = data_dict["tfwfile"]
-    #     #     transform = read_tfw(tfw_path)
-    #     #     da = rioxarray.open_rasterio(data_dict["tiffile"], transform=transform)
-    #     # else:
-
-    #     da = rioxarray.open_rasterio(data_dict["tiffile"])
-    #     data_type = "xarray"
-
-    # if data_type == "xarray":
-
-    #     # Get the CRS
-    #     crs_data = da.rio.crs
-
-    #     if "crs" in data_dict:
-    #         # Override what was in the data array
-    #         crs_data = data_dict["crs"]
-
-    #     # Get the lon and lat range and dx
-    #     if crs_data.is_geographic:
-    #         if not lon_range:
-    #             lon_range = [da.x.min(), da.x.max()]
-    #         if not lat_range:
-    #             lat_range = [da.y.min(), da.y.max()]
-    #         dx = np.mean(np.diff(da.y)) * 111000.0
-
-    #     else:
-    #         if not lon_range and not lat_range:
-    #             # Get bounding box
-    #             x_range = [da.x.min(), da.x.max()]
-    #             y_range = [da.y.min(), da.y.max()]
-    #             # Get lon/lat range
-    #             transformer = Transformer.from_crs(crs_data, CRS.from_epsg(4326), always_xy=True)
-    #             lon_range = [transformer.transform(x_range[0], y_range[0])[0], transformer.transform(x_range[1], y_range[1])[0]]
-    #             lat_range = [transformer.transform(x_range[0], y_range[0])[1], transformer.transform(x_range[1], y_range[1])[1]]
-    #         dx = np.abs(np.mean(np.diff(da.y)))
-
-    #     transformer_3857_to_crs = Transformer.from_crs(
-    #         CRS.from_epsg(3857), crs_data, always_xy=True
-    #     )
-
-    #     # Determine zoom range
-    #     if zoom_range is None:
-    #         zoom_max = get_zoom_level_for_resolution(dx * 0.5)
-    #         zoom_range = [0, zoom_max]
-
-    # elif data_type == "twm":
-    #     # Max zoom obtained from index path
-    #     # List folders in index path and turn names into integers
-    #     subfolders = list_folders(os.path.join(index_path, "*" ), basename=True)
-    #     # Convert strings to integers
-    #     ilevels = [int(item) for item in subfolders]
-    #     zoom_max = max(ilevels)
-    #     zoom_range = [0, zoom_max]
-    #     da = None
-
     if index_path:
         subfolders = list_folders(os.path.join(index_path, "*"), basename=True)
         # Convert strings to integers
         ilevels = [int(item) for item in subfolders]
         zoom_max = max(ilevels)
         zoom_range = [0, zoom_max]
-    else:
-        zoom_max = 23
-        zoom_range = [0, zoom_max]
+    elif zoom_range is None:
+        # Give error
+        raise ValueError(
+            "zoom_range must be provided if index_path is not provided"
+        )
 
     # transformer_3857_to_crs = Transformer.from_crs(
     #     CRS.from_epsg(3857), crs_data, always_xy=True
     # )
 
-    twm.zoom_range = [0, zoom_max]
+    twm.zoom_range = zoom_range
     twm.max_zoom = zoom_range[1]
 
     # Use highest zoom level
@@ -180,6 +91,7 @@ def make_topobathy_tiles_top_level(
     # Otherwise, use lon_range and lat_range
     # This option is used when we only want to make tiles that cover a model domain
     if index_path:
+        # Get ix0, ix1, iy0 and iy1 from the existing index files
         index_zoom_path = os.path.join(index_path, str(izoom))
         # List folders and turn names into integers
         iy0 = 1e15
@@ -196,7 +108,10 @@ def make_topobathy_tiles_top_level(
             iy0 = min(iy0, min(it_list))
             iy1 = max(iy1, max(it_list))
     else:
-        # Use the lon_range and lat_range from the data array or from user input
+        if lon_range is None or lat_range is None:
+            # Get the lon_range and lat_range from the data_dict (should add this functionality to bathymetry_database)
+            lon_range, lat_range = bathymetry_database.get_lon_lat_range(data_dict["name"])
+
         ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
         ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
 
@@ -218,6 +133,7 @@ def make_topobathy_tiles_top_level(
     options["interpolation_method"] = interpolation_method
     options["z_range"] = z_range
     options["bathymetry_database"] = bathymetry_database
+    options["skip_existing"] = skip_existing
 
     # Loop in x direction
     for i in range(ix0, ix1 + 1):
@@ -240,7 +156,7 @@ def make_topobathy_tiles_top_level(
                             j,
                             izoom,
                             twm,
-                            data_list,
+                            data_dict,
                             options,
                         )
                         for j in range(iy0, iy1 + 1)
@@ -251,7 +167,7 @@ def make_topobathy_tiles_top_level(
             for j in range(iy0, iy1 + 1):
                 # Create highest zoom level tile
                 create_highest_zoom_level_tile(
-                    zoom_path_i, i, j, izoom, twm, data_list, options
+                    zoom_path_i, i, j, izoom, twm, data_dict, options
                 )
 
         # If zoom_path_i is empty, then remove it again
@@ -384,7 +300,7 @@ def bbox_xy2latlon(x0, x1, y0, y1, crs):
 
 
 def create_highest_zoom_level_tile(
-    zoom_path_i, i, j, izoom, twm, da, data_type, options
+    zoom_path_i, i, j, izoom, twm, data_dict, options        
 ):
     file_name = os.path.join(zoom_path_i, str(j) + ".png")
     transformer_4326_to_3857 = options["transformer_4326_to_3857"]
@@ -394,7 +310,7 @@ def create_highest_zoom_level_tile(
     dxy = options["dxy"]
     z_range = options["z_range"]
 
-    skip_existing = False
+    skip_existing = options["skip_existing"]
 
     # Create highest zoom level tile
     if os.path.exists(file_name):
@@ -438,7 +354,7 @@ def create_highest_zoom_level_tile(
 
     bathymetry_database = options["bathymetry_database"]
     zg = bathymetry_database.get_bathymetry_on_grid(
-        x3857, y3857, CRS.from_epsg(3857), data_list
+        x3857, y3857, CRS.from_epsg(3857), [data_dict]
     )
 
     # if data_type == "ddb":

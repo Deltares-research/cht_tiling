@@ -19,7 +19,7 @@ dependencies = ["numpy", "scipy", "matplotlib >= 3.9.0", "pyproj", "pillow", "xa
 dynamic = ["version"]
 
 [project.optional-dependencies]
-tests = ["pytest", "pytest-cov", "geopandas", "rasterio", "rioxarray", "cht_bathymetry"]
+tests = ["pytest", "pytest-cov", "geopandas", "rasterio", "rioxarray", "cht_bathymetry", "contextily"]
 
 [tool.setuptools]
 zip-safe = true

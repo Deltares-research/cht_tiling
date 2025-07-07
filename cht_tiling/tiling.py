@@ -170,6 +170,22 @@ def make_png_tiles(
 
                     valt = zb
 
+                elif option == "water_level":
+                    valt = valg[ind]
+                    valt[np.where(ind < 0)] = np.nan
+
+                    if topo_path is not None:
+                        # Read bathy
+                        bathy_file = os.path.join(
+                            topo_path, str(izoom), ifolder, str(j) + ".dat"
+                        )
+                        if not os.path.exists(bathy_file):
+                            # No bathy for this tile, continue
+                            continue
+                        zb = np.fromfile(bathy_file, dtype="f4")
+                        # only show water levels for bed levels below zbmax (i.e. wet areas)
+                        valt[zb > zbmax] = np.nan
+
                 else:
                     valt = valg[ind]
                     valt[ind < 0] = np.nan
@@ -268,12 +284,12 @@ def make_floodmap_tiles(
 
     # First do highest zoom level, then derefine from there
     if not zoom_range:
-        # Check available levels in index tiles
-        levs = fo.list_folders(os.path.join(index_path, "*"), basename=True)
-        zoom_range = [999, -999]
-        for lev in levs:
-            zoom_range[0] = min(zoom_range[0], int(lev))
-            zoom_range[1] = max(zoom_range[1], int(lev))
+        zoom_range = [0, 23]
+    # Check available levels in index tiles, if zoom_range is set too large, change accordingly
+    levs = fo.list_folders(os.path.join(index_path, "*"), basename=True)
+    levs_sorted = sorted(levs, key=lambda x: int(x))
+    zoom_range[0] = max(zoom_range[0], int(levs_sorted[0]))
+    zoom_range[1] = min(zoom_range[1], int(levs_sorted[-1]))
 
     izoom = zoom_range[1]
 

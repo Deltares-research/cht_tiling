@@ -1,22 +1,23 @@
 import os
-from PIL import Image
-from typing import Union
-import xarray as xr
-import numpy as np
-import rioxarray
-import rasterio
 from pathlib import Path
+from typing import Union
+
 import matplotlib.pyplot as plt
+import numpy as np
+import rasterio
+import rioxarray
+import xarray as xr
 from matplotlib import cm
+from matplotlib.colors import BoundaryNorm, ListedColormap
+from matplotlib.patches import Patch
+from PIL import Image
 from pyproj import Transformer
-from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.warp import Resampling, calculate_default_transform, reproject
 
 # from rasterio.enums import Resampling as RioResampling
 from rasterio.windows import from_bounds
-from matplotlib.colors import ListedColormap, BoundaryNorm
-from matplotlib.patches import Patch
-import contextily as ctx
 
+import contextily as ctx
 import cht_tiling.fileops as fo
 from cht_tiling.utils import deg2num, num2deg, png2elevation, png2int
 
@@ -234,7 +235,6 @@ class FloodMap:
         elif output_file.endswith(".tif"):
             # Write to geotiff
             if self.cmap is not None:
-
                 # Get RBG data array
                 rgb_da = get_rgb_data_array(
                     self.ds[self.data_array_name],
@@ -271,7 +271,6 @@ class FloodMap:
             return
 
         try:
-
             # Get the bounds of the data
             lon_min = xlim[0]
             lat_min = ylim[0]
@@ -414,7 +413,6 @@ class FloodMap:
         fig, ax = plt.subplots(figsize=(width, aspect_ratio * width))
 
         if discrete_colors:
-
             masked = da_3857.where(da_3857 >= color_values[0]["lower_value"])
 
             classified = xr.full_like(masked, np.nan)
@@ -430,7 +428,7 @@ class FloodMap:
                     labels.append(f"{lv}–{uv} m")
                 else:
                     lv = color_value["lower_value"]
-                    classified = classified.where(~((masked > lv)), icolor + 1)
+                    classified = classified.where(~(masked > lv), icolor + 1)
                     labels.append(f">{lv} m")
                 colors.append(color_value["color"])
 
@@ -454,7 +452,6 @@ class FloodMap:
             plt.legend(handles=legend_elements, title="Flood Depth", loc="lower right")
 
         else:
-
             # Plot the water depth
             da_3857.plot(
                 ax=ax,
@@ -616,7 +613,6 @@ def get_rgb_data_array(
 
 
 def reproject_bbox(xmin, ymin, xmax, ymax, crs_src, crs_dst, buffer=0.0):
-
     transformer = Transformer.from_crs(crs_src, crs_dst, always_xy=True)
 
     # Buffer the bounding box

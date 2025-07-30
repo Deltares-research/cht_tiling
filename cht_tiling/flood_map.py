@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from typing import Union
 
+import contextily as ctx
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
@@ -12,12 +13,8 @@ from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.patches import Patch
 from PIL import Image
 from pyproj import Transformer
-from rasterio.warp import Resampling, calculate_default_transform, reproject
+from rasterio.warp import Resampling
 
-# from rasterio.enums import Resampling as RioResampling
-from rasterio.windows import from_bounds
-
-import contextily as ctx
 import cht_tiling.fileops as fo
 from cht_tiling.utils import deg2num, num2deg, png2elevation, png2int
 
@@ -178,23 +175,23 @@ class FloodMap:
         # Set the no_data mask
         no_data_mask = indices == nan_val_indices
         # Turn indices into numpy array and set no_data values to 0
-        indices = np.squeeze(indices.values[:])
+        indices = np.squeeze(indices.to_numpy()[:])
         indices[np.where(indices == nan_val_indices)] = 0
 
         # Compute water depth
         if isinstance(self.zs, float):
             # If zs is a float, use constant water level
-            h = np.full(zb.shape, self.zs) - zb.values[:]
+            h = np.full(zb.shape, self.zs) - zb.to_numpy()[:]
         else:
-            h = self.zs[indices] - zb.values[:]
+            h = self.zs[indices] - zb.to_numpy()[:]
         # Set water depth to NaN where indices are no data
         h[no_data_mask] = np.nan
         # Set water depth to NaN where it is less than hmin
         h[h < self.hmin] = np.nan
         # Set water depth to NaN where zb is less than zbmin
-        h[zb.values[:] < self.zbmin] = np.nan
+        h[zb.to_numpy()[:] < self.zbmin] = np.nan
         # Set water depth to NaN where zb is greater than zbmax
-        h[zb.values[:] > self.zbmax] = np.nan
+        h[zb.to_numpy()[:] > self.zbmax] = np.nan
 
         # Turn h into a DataArray with the same dimensions as zb
         self.ds = xr.Dataset()
@@ -321,7 +318,7 @@ class FloodMap:
             )
 
             # Convert to numpy array and transpose to (y, x, band)
-            rgba = rgb_crop.transpose("y", "x", "band").values.astype("uint8")
+            rgba = rgb_crop.transpose("y", "x", "band").to_numpy().astype("uint8")
 
             plt.imsave(file_name, rgba)
 
@@ -372,10 +369,10 @@ class FloodMap:
         """
 
         if lon_lim is None or lat_lim is None:
-            lon_min = self.ds.x.min().values
-            lat_min = self.ds.y.min().values
-            lon_max = self.ds.x.max().values
-            lat_max = self.ds.y.max().values
+            lon_min = self.ds.x.min().to_numpy()
+            lat_min = self.ds.y.min().to_numpy()
+            lon_max = self.ds.x.max().to_numpy()
+            lat_max = self.ds.y.max().to_numpy()
             # Use CRS of the data
             crs = self.ds[self.data_array_name].rio.crs
             transformer = Transformer.from_crs(crs, "EPSG:3857", always_xy=True)
@@ -436,7 +433,7 @@ class FloodMap:
             cmap = ListedColormap(colors)
             # bounds is list from 1 to len(colors) + 1
             # e.g. [1, 2, 3, 4, 5] for 4 colors
-            bounds = [i for i in range(1, len(colors) + 2)]
+            bounds = list(range(1, len(colors) + 2))
 
             norm = BoundaryNorm(bounds, cmap.N)
 

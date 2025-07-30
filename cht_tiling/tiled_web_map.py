@@ -250,11 +250,13 @@ class TiledWebMap:
                 else:
                     # Find appropriate zoom level
                     zoom_max = get_zoom_level_for_resolution(dx_max_zoom)
-                zoom_range = [0, zoom_max]    
+                zoom_range = [0, zoom_max]
 
-            # Now loop through datasets in data_list 
+            # Now loop through datasets in data_list
             for idata, data_dict in enumerate(data_list):
-                print(f"Processing {data_dict['name']} ... ({idata + 1} of {len(data_list)})")
+                print(
+                    f"Processing {data_dict['name']} ... ({idata + 1} of {len(data_list)})"
+                )
                 make_topobathy_tiles_top_level(
                     self,
                     data_dict,
@@ -440,9 +442,9 @@ class TiledWebMap:
         metadata["description"]["email"] = "Your email here"
         metadata["description"]["version"] = "1.0"
         metadata["description"]["terms_for_use"] = "Use as you like"
-        metadata["description"]["disclaimer"] = (
-            "These data are made available in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
-        )
+        metadata["description"][
+            "disclaimer"
+        ] = "These data are made available in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
 
         # Write to toml file
         # toml_file = os.path.join(path, name + ".tml")

@@ -442,9 +442,9 @@ class TiledWebMap:
         metadata["description"]["email"] = "Your email here"
         metadata["description"]["version"] = "1.0"
         metadata["description"]["terms_for_use"] = "Use as you like"
-        metadata["description"][
-            "disclaimer"
-        ] = "These data are made available in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+        metadata["description"]["disclaimer"] = (
+            "These data are made available in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
+        )
 
         # Write to toml file
         # toml_file = os.path.join(path, name + ".tml")

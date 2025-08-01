@@ -20,34 +20,59 @@ from cht_tiling.utils import deg2num, num2deg, png2elevation, png2int
 
 
 class FloodMap:
-    def __init__(self):
+    def __init__(
+        self,
+        topobathy_file: Union[str, Path] = None,
+        index_file: Union[str, Path] = None,
+        zbmin: float = 0.0,
+        zbmax: float = 99999.9,
+        hmin: float = 0.1,
+        max_pixel_size: float = 0.0,
+        data_array_name: str = "water_depth",
+        cmap: str = None,
+        cmin: float = None,
+        cmax: float = None,
+        color_values: list = None
+    ):
         """
-        Initialize the FloodMap class with topobathy data, and indices.
+        Initialize the FloodMap class with optional parameters.
 
         Parameters:
         ----------
-        topobathy_file : Union[str, Path]
-            Topobathy data file (COG).
-        index_file : Union[str, Path]
-            Indices data file (COG).
+        topobathy_file : Union[str, Path], optional
+        Topobathy data file (COG).
+        index_file : Union[str, Path], optional
+        Indices data file (COG).
+        zbmin : float, optional
+        Minimum allowable topobathy value.
+        zbmax : float, optional
+        Maximum allowable topobathy value.
+        hmin : float, optional
+        Minimum allowable water depth.
+        max_pixel_size : float, optional
+        Maximum pixel size for the appropriate overview level.
+        data_array_name : str, optional
+        Name of the data array in the output dataset.
+        cmap : str, optional
+        Colormap to use.
+        cmin : float, optional
+        Minimum value for colormap normalization.
+        cmax : float, optional
+        Maximum value for colormap normalization.
         """
-        # self.topobathy_file = topobathy_file
-        # self.index_file = index_file
-        # self.zb = rasterio.open(self.topobathy_file)
-        # self.indices = rasterio.open(self.index_file)
-        self.topobathy_file = None
-        self.index_file = None
-        self.zb = None
-        self.indices = None
-        self.zbmin = 0.0
-        self.zbmax = 99999.9
-        self.hmin = 0.1
-        self.max_pixel_size = 0.0
-        self.data_array_name = "water_depth"
-        # self.cmap = "jet"
-        self.cmap = None
-        self.cmin = None
-        self.cmax = None
+        self.topobathy_file = topobathy_file
+        self.index_file = index_file
+        self.zb = rasterio.open(topobathy_file) if topobathy_file else None
+        self.indices = rasterio.open(index_file) if index_file else None
+        self.zbmin = zbmin
+        self.zbmax = zbmax
+        self.hmin = hmin
+        self.max_pixel_size = max_pixel_size
+        self.data_array_name = data_array_name
+        self.cmap = cmap
+        self.cmin = cmin
+        self.cmax = cmax
+        self.color_values = color_values
         self.ds = xr.Dataset()
 
     def set_topobathy_file(self, topobathy_file: Union[str, Path]) -> None:
@@ -300,6 +325,7 @@ class FloodMap:
                 cmap=self.cmap,
                 cmin=self.cmin,
                 cmax=self.cmax,
+                color_values= self.color_values,
             )
 
             # Now reproject to EPSG:3857 and create a png file
@@ -552,53 +578,99 @@ def get_appropriate_overview_level(
 
 
 def get_rgb_data_array(
-    da: xr.DataArray, cmap: str, cmin: float = None, cmax: float = None
+    da: xr.DataArray, 
+    cmap: str = None, 
+    cmin: float = None, 
+    cmax: float = None,
+    color_values: list = None
 ) -> xr.DataArray:
     """
-    Convert a DataArray to RGB using a colormap.
+    Convert a DataArray to RGB using either a colormap or discrete color values.
 
     Parameters:
     ----------
     da : xr.DataArray
         The input DataArray to be converted.
-    cmap : str
-        The colormap to use (e.g., 'viridis').
+    cmap : str, optional
+        The colormap to use (e.g., 'viridis'). Used when color_values is None.
     cmin : float, optional
         Minimum value for normalization. If None, the minimum value of the data is used.
     cmax : float, optional
         Maximum value for normalization. If None, the maximum value of the data is used.
+    color_values : list, optional
+        List of dictionaries containing discrete color definitions with keys:
+        'lower_value' (optional), 'upper_value' (optional), and 'rgb' (list of 3 values 0-255).
+        At least one of 'lower_value' or 'upper_value' must be specified.
+        If provided, this takes precedence over cmap.
 
     Returns:
     -------
     xr.DataArray
         The RGB DataArray.
     """
-    # Normalize the data
-    if cmin is None:
-        cmin = da.min()
-    if cmax is None:
-        cmax = da.max()
+    if color_values is not None:
+        # Get the shape and flatten the data
+        ny, nx = da.shape
+        zz = da.values
+        # Use discrete color values
+        rgba = np.zeros((ny, nx, 4), "uint8")
+        
+        # Determine value based on user-defined ranges
+        for color_value in color_values:
+            if "upper_value" in color_value and "lower_value" in color_value:
+                # Both bounds specified
+                inr = np.logical_and(
+                    zz >= color_value["lower_value"], 
+                    zz < color_value["upper_value"]
+                )
+            elif "lower_value" in color_value and "upper_value" not in color_value:
+                # Only lower bound specified (>= lower_value)
+                inr = zz >= color_value["lower_value"]
+            elif "upper_value" in color_value and "lower_value" not in color_value:
+                # Only upper bound specified (< upper_value)
+                inr = zz < color_value["upper_value"]
+            else:
+                # Neither bound specified, skip this color_value
+                continue
 
-    # Ensure cmin and cmax are not equal to avoid division by zero
-    if cmin == cmax:
-        cmin = cmax - 1.0
-        cmax = cmax + 1.0
+            # Mask out NaN values in zz
+            valid = np.logical_and(inr, ~np.isnan(zz))
+            rgba[valid, 0] = color_value["rgb"][0]
+            rgba[valid, 1] = color_value["rgb"][1]
+            rgba[valid, 2] = color_value["rgb"][2]
+            rgba[valid, 3] = 255
+        
+    else:
+        # Use continuous colormap (existing functionality)
+        if cmap is None:
+            raise ValueError("Either color_values or cmap must be provided")
+            
+        # Normalize the data
+        if cmin is None:
+            cmin = da.min()
+        if cmax is None:
+            cmax = da.max()
 
-    # Normalize to [0, 1]
-    normed = (da - cmin) / (cmax - cmin)
+        # Ensure cmin and cmax are not equal to avoid division by zero
+        if cmin == cmax:
+            cmin = cmax - 1.0
+            cmax = cmax + 1.0
 
-    # Get colormap
-    cmap = plt.get_cmap(cmap)
+        # Normalize to [0, 1]
+        normed = (da - cmin) / (cmax - cmin)
 
-    # Apply colormap (returns RGBA)
-    rgba = cmap(normed)
+        # Get colormap
+        cmap_obj = plt.get_cmap(cmap)
 
-    # Convert to 8-bit RGB and drop alpha
-    rgba = (rgba[:, :, :] * 255).astype("uint8")
+        # Apply colormap (returns RGBA)
+        rgba = cmap_obj(normed)
+
+        # Convert to 8-bit RGB
+        rgba = (rgba[:, :, :] * 255).astype("uint8")
 
     # Convert to DataArray with 'band' dimension
     rgb_da = xr.DataArray(
-        np.moveaxis(rgba, -1, 0),  # shape: (3, height, width)
+        np.moveaxis(rgba, -1, 0),  # shape: (4, height, width)
         dims=("band", "y", "x"),
         coords={"band": [0, 1, 2, 3], "y": da.y, "x": da.x},
         attrs=da.attrs,

@@ -250,11 +250,13 @@ class TiledWebMap:
                 else:
                     # Find appropriate zoom level
                     zoom_max = get_zoom_level_for_resolution(dx_max_zoom)
-                zoom_range = [0, zoom_max]    
+                zoom_range = [0, zoom_max]
 
-            # Now loop through datasets in data_list 
+            # Now loop through datasets in data_list
             for idata, data_dict in enumerate(data_list):
-                print(f"Processing {data_dict['name']} ... ({idata + 1} of {len(data_list)})")
+                print(
+                    f"Processing {data_dict['name']} ... ({idata + 1} of {len(data_list)})"
+                )
                 make_topobathy_tiles_top_level(
                     self,
                     data_dict,

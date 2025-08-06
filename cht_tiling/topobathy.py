@@ -243,8 +243,9 @@ def make_topobathy_tiles_lower_levels(
                 int(j.split(".")[0])
                 for j in os.listdir(os.path.join(zoom_path_higher, i))
             ]
-            it0_higher = min(it0_higher, min(it_list))
-            it1_higher = max(it1_higher, max(it_list))
+            if len(it_list) > 0:
+                it0_higher = min(it0_higher, min(it_list))
+                it1_higher = max(it1_higher, max(it_list))
         iy0 = int(it0_higher / 2)
         iy1 = int(it1_higher / 2)
 

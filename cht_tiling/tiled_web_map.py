@@ -240,19 +240,21 @@ class TiledWebMap:
         parallel=True,
         interpolation_method="linear",
     ):
-        if make_highest_level:
-            if zoom_range is None and index_path is None:
-                # Need to determine zoom range
-                if dx_max_zoom is None:
-                    # Need to determine dx_max_zoom from all the datasets
-                    # Loop through datasets in datalist to determine dxmin in metres
-                    dx_max_zoom = 3.0
-                else:
-                    # Find appropriate zoom level
-                    zoom_max = get_zoom_level_for_resolution(dx_max_zoom)
-                zoom_range = [0, zoom_max]
 
-            # Now loop through datasets in data_list
+        if zoom_range is None and index_path is None:
+            # Need to determine zoom range
+            if dx_max_zoom is None:
+                # Need to determine dx_max_zoom from all the datasets
+                # Loop through datasets in datalist to determine dxmin in metres
+                dx_max_zoom = 3.0
+            else:
+                # Find appropriate zoom level
+                zoom_max = get_zoom_level_for_resolution(dx_max_zoom)
+            zoom_range = [0, zoom_max]    
+
+        if make_highest_level:
+
+            # Now loop through datasets in data_list 
             for idata, data_dict in enumerate(data_list):
                 print(
                     f"Processing {data_dict['name']} ... ({idata + 1} of {len(data_list)})"
@@ -271,6 +273,7 @@ class TiledWebMap:
                 )
 
         if make_lower_levels:
+            self.zoom_range = zoom_range
             make_topobathy_tiles_lower_levels(
                 self, skip_existing=skip_existing, parallel=parallel
             )

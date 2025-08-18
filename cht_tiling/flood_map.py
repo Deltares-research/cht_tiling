@@ -7,6 +7,7 @@ import rioxarray
 import rasterio
 from pathlib import Path
 import matplotlib.pyplot as plt
+# import matplotlib.colors as mcolors
 from matplotlib import cm
 from pyproj import Transformer
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -47,10 +48,27 @@ class FloodMap:
         self.max_pixel_size = 0.0
         self.data_array_name = "water_depth"
         # self.cmap = "jet"
+        self.color_values = None
         self.cmap = None
         self.cmin = None
         self.cmax = None
+        self.discrete_colors = False
         self.ds = xr.Dataset()
+
+        self.legend = {}
+        self.legend["title"] = "Flood Depth (m)"
+        self.legend["contour"] = []
+        # Set default
+        self.legend["contour"].append({"color": "#FF0000", "lower_value": 2.0, "text": "2.0+ m"})
+        self.legend["contour"].append(
+                {"color": "#FFA500", "lower_value": 1.0, "upper_value": 2.0, "text": "1.0–2.0 m"}
+            )
+        self.legend["contour"].append(
+                {"color": "#FFFF00", "lower_value": 0.3, "upper_value": 1.0, "text": "0.3–1.0 m"}
+            )
+        self.legend["contour"].append(
+                {"color": "#00FF00", "lower_value": 0.1, "upper_value": 0.3, "text": "0.1–0.3 m"}
+            )
 
     def set_topobathy_file(self, topobathy_file: Union[str, Path]) -> None:
         """
@@ -232,12 +250,14 @@ class FloodMap:
             self.ds.to_netcdf(output_file)
 
         elif output_file.endswith(".tif"):
+
             # Write to geotiff
             if self.cmap is not None:
 
                 # Get RBG data array
                 rgb_da = get_rgb_data_array(
                     self.ds[self.data_array_name],
+                    color_values=self.color_values,
                     cmap=self.cmap,
                     cmin=self.cmin,
                     cmax=self.cmax,
@@ -297,10 +317,12 @@ class FloodMap:
                 buffer=0.05,
             )
 
+            # Compute water depth and store in self.ds
             self.make(max_pixel_size=dxy, bbox=bbox)
 
             rgb_da = get_rgb_data_array(
                 self.ds[self.data_array_name],
+                color_values=self.color_values,
                 cmap=self.cmap,
                 cmin=self.cmin,
                 cmax=self.cmax,
@@ -558,7 +580,7 @@ def get_appropriate_overview_level(
 
 
 def get_rgb_data_array(
-    da: xr.DataArray, cmap: str, cmin: float = None, cmax: float = None
+    da: xr.DataArray, cmap: str, cmin: float = None, cmax: float = None, color_values=None
 ) -> xr.DataArray:
     """
     Convert a DataArray to RGB using a colormap.
@@ -579,25 +601,62 @@ def get_rgb_data_array(
     xr.DataArray
         The RGB DataArray.
     """
-    # Normalize the data
-    if cmin is None:
-        cmin = da.min()
-    if cmax is None:
-        cmax = da.max()
 
-    # Ensure cmin and cmax are not equal to avoid division by zero
-    if cmin == cmax:
-        cmin = cmax - 1.0
-        cmax = cmax + 1.0
+    if color_values is None:
+        discrete_colors = False
+    else:
+        discrete_colors = True
+        if isinstance(color_values, str):
+            # Use default
+            color_values = []
+            color_values.append(
+                {"color": "lightgreen", "lower_value": 0.1, "upper_value": 0.3}
+            )
+            color_values.append(
+                {"color": "yellow", "lower_value": 0.3, "upper_value": 1.0}
+            )
+            color_values.append(
+                {"color": "#FFA500", "lower_value": 1.0, "upper_value": 2.0}
+            )
+            color_values.append({"color": "red", "lower_value": 2.0})
 
-    # Normalize to [0, 1]
-    normed = (da - cmin) / (cmax - cmin)
+    if discrete_colors:
+        # Initialize an RGBA array with zeros
+        rgba = np.zeros((da.shape[0], da.shape[1], 4), dtype=np.float32)
+        # Loop through color classes
+        for icolor, color_value in enumerate(color_values):
+            # Get rgb float values for this color (between 0.0 and 1.0)
+            color_rgba = cm.colors.to_rgba(color_value["color"])
+            if "lower_value" in color_values and "upper_value" in color_value:
+                rgba[(da >= color_value["lower_value"]) & (da < color_value["upper_value"]), :] = color_rgba
+            elif "lower_value" in color_value:
+                rgba[(da >= color_value["lower_value"]), :] = color_rgba
+            elif "upper_value" in color_value:
+                rgba[(da < color_value["upper_value"]), :] = color_rgba
+            pass
 
-    # Get colormap
-    cmap = plt.get_cmap(cmap)
 
-    # Apply colormap (returns RGBA)
-    rgba = cmap(normed)
+    else:
+
+        # Normalize the data
+        if cmin is None:
+            cmin = da.min()
+        if cmax is None:
+            cmax = da.max()
+
+        # Ensure cmin and cmax are not equal to avoid division by zero
+        if cmin == cmax:
+            cmin = cmax - 1.0
+            cmax = cmax + 1.0
+
+        # Normalize to [0, 1]
+        normed = (da - cmin) / (cmax - cmin)
+
+        # Get colormap
+        cmap = plt.get_cmap(cmap)
+
+        # Apply colormap (returns RGBA)
+        rgba = cmap(normed)
 
     # Convert to 8-bit RGB and drop alpha
     rgba = (rgba[:, :, :] * 255).astype("uint8")

@@ -412,7 +412,7 @@ def png2int(png_file, idummy):
         + rgba[:, :, 3]
     )
     ind[np.where(ind == 4294967295)] = idummy
-    return ind
+    return np.flip(ind, axis=0)
 
 
 def int2png(val, png_file):

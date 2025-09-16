@@ -18,6 +18,7 @@ from pyproj import CRS, Transformer
 from scipy.interpolate import RegularGridInterpolator
 
 import cht_tiling.fileops as fo
+from cht_tiling.utils import deg2num, num2deg, png2elevation, png2int
 
 # class TileLayerTime:
 #     def __init__(self):
@@ -59,6 +60,7 @@ def make_png_tiles(
     png_path,
     zoom_range=[0, 23],
     option="direct",
+    format="png",
     topo_path=None,
     color_values=None,
     caxis=None,
@@ -99,6 +101,15 @@ def make_png_tiles(
         caxis.append(np.nanmin(valg))
         caxis.append(np.nanmax(valg))
 
+    # First do highest zoom level, then derefine from there
+    if not zoom_range:
+        zoom_range = [0, 23]
+    # Check available levels in index tiles, if zoom_range is set too large, change accordingly
+    levs = fo.list_folders(os.path.join(index_path, "*"), basename=True)
+    levs_sorted = sorted(levs, key=lambda x: int(x))
+    zoom_range[0] = max(zoom_range[0], int(levs_sorted[0]))
+    zoom_range[1] = min(zoom_range[1], int(levs_sorted[-1]))
+
     for izoom in range(zoom_range[0], zoom_range[1] + 1):
         if not quiet:
             print("Processing zoom level " + str(izoom))
@@ -117,14 +128,18 @@ def make_png_tiles(
             index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
             png_zoom_path_i = os.path.join(png_zoom_path, ifolder)
 
-            for jfile in list_files(os.path.join(index_zoom_path_i, "*.dat")):
+            for jfile in list_files(os.path.join(index_zoom_path_i, f"*.{format}")):
                 jfile = os.path.basename(jfile)
                 j = int(jfile[:-4])
 
                 index_file = os.path.join(index_zoom_path_i, jfile)
                 png_file = os.path.join(png_zoom_path_i, str(j) + ".png")
 
-                ind = np.fromfile(index_file, dtype="i4")
+                if format == "png":
+                    ind = png2int(index_file, -1)
+                    ind = ind.flatten()
+                else:
+                    ind = np.fromfile(index_file, dtype="i4")
 
                 if topo_path and option == "flood_probability_map":
                     # valg is actually CDF interpolator to obtain
@@ -132,12 +147,15 @@ def make_png_tiles(
 
                     # Read bathy
                     bathy_file = os.path.join(
-                        topo_path, str(izoom), ifolder, str(j) + ".dat"
+                        topo_path, str(izoom), ifolder, str(j) + f".{format}"
                     )
                     if not os.path.exists(bathy_file):
                         # No bathy for this tile, continue
                         continue
-                    zb = np.fromfile(bathy_file, dtype="f4")
+                    if format == "png":
+                        zb = png2elevation(bathy_file).flatten()
+                    elif format == "dat":
+                        zb = np.fromfile(bathy_file, dtype="f4")
                     zs = zb + depth
 
                     valt = valg[ind](zs)
@@ -146,12 +164,15 @@ def make_png_tiles(
                 elif topo_path and option == "floodmap":
                     # Read bathy
                     bathy_file = os.path.join(
-                        topo_path, str(izoom), ifolder, str(j) + ".dat"
+                        topo_path, str(izoom), ifolder, str(j) + f".{format}"
                     )
                     if not os.path.exists(bathy_file):
                         # No bathy for this tile, continue
                         continue
-                    zb = np.fromfile(bathy_file, dtype="f4")
+                    if format == "png":
+                        zb = png2elevation(bathy_file).flatten()
+                    elif format == "dat":
+                        zb = np.fromfile(bathy_file, dtype="f4")
 
                     valt = valg[ind]
                     valt = valt - zb
@@ -161,12 +182,15 @@ def make_png_tiles(
                 elif topo_path and option == "topography":
                     # Read bathy
                     bathy_file = os.path.join(
-                        topo_path, str(izoom), ifolder, str(j) + ".dat"
+                        topo_path, str(izoom), ifolder, str(j) + f".{format}"
                     )
                     if not os.path.exists(bathy_file):
-                        # No bathy for this tile, continue
                         continue
-                    zb = np.fromfile(bathy_file, dtype="f4")
+                    # No bathy for this tile, continue
+                    if format == "png":
+                        zb = png2elevation(bathy_file).flatten()
+                    elif format == "dat":
+                        zb = np.fromfile(bathy_file, dtype="f4")
 
                     valt = zb
 
@@ -177,14 +201,16 @@ def make_png_tiles(
                     if topo_path is not None:
                         # Read bathy
                         bathy_file = os.path.join(
-                            topo_path, str(izoom), ifolder, str(j) + ".dat"
+                            topo_path, str(izoom), ifolder, str(j) + f".{format}"
                         )
-                        if not os.path.exists(bathy_file):
+                        if os.path.exists(bathy_file):
                             # No bathy for this tile, continue
-                            continue
-                        zb = np.fromfile(bathy_file, dtype="f4")
-                        # only show water levels for bed levels below zbmax (i.e. wet areas)
-                        valt[zb > zbmax] = np.nan
+                            if format == "png":
+                                zb = png2elevation(bathy_file).flatten()
+                            elif format == "dat":
+                                zb = np.fromfile(bathy_file, dtype="f4")
+                            # only show water levels for bed levels below zbmax (i.e. wet areas)
+                            valt[zb > zbmax] = np.nan
 
                 else:
                     valt = valg[ind]
@@ -1333,17 +1359,17 @@ def elevation2png(val, png_file):
 ### Conversion between int and png and vice versa
 
 
-def png2int(png_file):
-    """Convert png to int array"""
-    # Open the PNG image
-    image = Image.open(png_file)
-    rgba = np.array(image.convert("RGBA"))
-    return (
-        (rgba[:, :, 0] * 256**3)
-        + (rgba[:, :, 1] * 256**2)
-        + (rgba[:, :, 2] * 256)
-        + rgba[:, :, 3]
-    )
+# def png2int(png_file):
+#     """Convert png to int array"""
+#     # Open the PNG image
+#     image = Image.open(png_file)
+#     rgba = np.array(image.convert("RGBA"))
+#     return (
+#         (rgba[:, :, 0] * 256**3)
+#         + (rgba[:, :, 1] * 256**2)
+#         + (rgba[:, :, 2] * 256)
+#         + rgba[:, :, 3]
+#     )
 
 
 def int2png(val, png_file):

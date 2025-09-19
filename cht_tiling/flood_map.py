@@ -75,6 +75,21 @@ class FloodMap:
         self.color_values = color_values
         self.ds = xr.Dataset()
 
+        self.legend = {}
+        self.legend["title"] = "Flood Depth (m)"
+        self.legend["contour"] = []
+        # Set default
+        self.legend["contour"].append({"color": "#FF0000", "lower_value": 2.0, "text": "2.0+ m"})
+        self.legend["contour"].append(
+                {"color": "#FFA500", "lower_value": 1.0, "upper_value": 2.0, "text": "1.0–2.0 m"}
+            )
+        self.legend["contour"].append(
+                {"color": "#FFFF00", "lower_value": 0.3, "upper_value": 1.0, "text": "0.3–1.0 m"}
+            )
+        self.legend["contour"].append(
+                {"color": "#00FF00", "lower_value": 0.1, "upper_value": 0.3, "text": "0.1–0.3 m"}
+            )
+
     def set_topobathy_file(self, topobathy_file: Union[str, Path]) -> None:
         """
         Set the topobathy file.
@@ -255,11 +270,13 @@ class FloodMap:
             self.ds.to_netcdf(output_file)
 
         elif output_file.endswith(".tif"):
+
             # Write to geotiff
             if self.cmap is not None:
                 # Get RBG data array
                 rgb_da = get_rgb_data_array(
                     self.ds[self.data_array_name],
+                    color_values=self.color_values,
                     cmap=self.cmap,
                     cmin=self.cmin,
                     cmax=self.cmax,
@@ -318,10 +335,12 @@ class FloodMap:
                 buffer=0.05,
             )
 
+            # Compute water depth and store in self.ds
             self.make(max_pixel_size=dxy, bbox=bbox)
 
             rgb_da = get_rgb_data_array(
                 self.ds[self.data_array_name],
+                color_values=self.color_values,
                 cmap=self.cmap,
                 cmin=self.cmin,
                 cmax=self.cmax,
@@ -655,7 +674,13 @@ def get_rgb_data_array(
         if cmin == cmax:
             cmin = cmax - 1.0
             cmax = cmax + 1.0
+        # Ensure cmin and cmax are not equal to avoid division by zero
+        if cmin == cmax:
+            cmin = cmax - 1.0
+            cmax = cmax + 1.0
 
+        # Normalize to [0, 1]
+        normed = (da - cmin) / (cmax - cmin)
         # Normalize to [0, 1]
         normed = (da - cmin) / (cmax - cmin)
 

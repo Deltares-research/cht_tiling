@@ -340,7 +340,6 @@ class FloodMap:
 
             rgb_da = get_rgb_data_array(
                 self.ds[self.data_array_name],
-                color_values=self.color_values,
                 cmap=self.cmap,
                 cmin=self.cmin,
                 cmax=self.cmax,

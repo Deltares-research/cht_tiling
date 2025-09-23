@@ -15,6 +15,8 @@ import toml
 import xarray as xr
 from botocore import UNSIGNED
 from botocore.client import Config
+from dask.array import da
+from dask import delayed
 
 from cht_tiling.indices import make_index_tiles
 from cht_tiling.topobathy import (
@@ -221,6 +223,149 @@ class TiledWebMap:
         z = np.flipud(z)
 
         return x, y, z
+
+    def get_data_lazy(self, xl, yl, max_pixel_size, chunk_size=None, waitbox=None):
+        """Get data from webmercator tiles as a dask array"""
+        # Check if availability matrix exists but has not been loaded
+        if self.availability_exists and not self.availability_loaded:
+            self.read_availability()
+            self.availability_loaded = True
+
+        # Determine zoom level
+        izoom = get_zoom_level_for_resolution(max_pixel_size)
+        izoom = min(izoom, self.max_zoom)
+
+        # Determine the indices of required tiles
+        ix0, iy0 = xy2num(xl[0], yl[1], izoom)
+        ix1, iy1 = xy2num(xl[1], yl[0], izoom)
+
+        # Make sure indices are within bounds
+        ix0 = max(0, ix0)
+        iy0 = max(0, iy0)
+        # ix1 = min(2**izoom - 1, ix1)
+        iy1 = min(2**izoom - 1, iy1)
+
+        # Create empty array
+        nx = (ix1 - ix0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
+        z = np.empty((ny, nx))
+        z[:] = np.nan
+
+        # First try to download missing tiles (it's faster if we can do this in parallel)
+        download_file_list = []
+        download_key_list = []
+
+        if self.download:
+            for i in range(ix0, ix1 + 1):
+                itile = np.mod(i, 2**izoom)  # wrap around
+                ifolder = str(itile)
+                for j in range(iy0, iy1 + 1):
+                    png_file = os.path.join(
+                        self.path, str(izoom), ifolder, str(j) + ".png"
+                    )
+                    if not os.path.exists(png_file):
+                        # File does not yet exist
+                        if self.availability_exists:
+                            # Check availability of the tile in matrix.
+                            if not self.check_availability(i, j, izoom):
+                                # Tile is also not available for download
+                                continue
+                        # Add to download_list
+                        download_file_list.append(png_file)
+                        download_key_list.append(
+                            f"{self.s3_key}/{str(izoom)}/{ifolder}/{str(j)}.png"
+                        )
+                        # Make sure the folder exists
+                        if not Path(png_file).parent.exists():
+                            Path(png_file).parent.mkdir(parents=True, exist_ok=True)
+
+            # Now download the missing tiles
+            if len(download_file_list) > 0:
+                if waitbox is not None:
+                    wb = waitbox("Downloading topography tiles ...")
+                # make boto s
+                if self.s3_client is None:
+                    self.s3_client = boto3.client(
+                        "s3", config=Config(signature_version=UNSIGNED)
+                    )
+                # Download missing tiles
+                with ThreadPool() as pool:
+                    pool.starmap(
+                        self.download_tile_parallel,
+                        [
+                            (self.s3_bucket, key, file)
+                            for key, file in zip(download_key_list, download_file_list)
+                        ],
+                    )
+                if waitbox is not None:
+                    wb.close()
+
+        # Prepare lists for tiles to be read
+        tile_paths = []
+        xs, ys = [], []
+
+        # Loop over required tiles
+        for i in range(ix0, ix1 + 1):
+            itile = np.mod(i, 2**izoom)  # wrap around
+            ifolder = str(itile)
+            for j in range(iy0, iy1 + 1):
+                png_file = os.path.join(self.path, str(izoom), ifolder, str(j) + ".png")
+                if not os.path.exists(png_file):
+                    continue
+
+                tile_paths.append(png_file)
+                xs.append(i)
+                ys.append(j)
+
+
+        tile_paths.sort()
+        xs = sorted(set(xs))
+        ys = sorted(set(ys))
+        tile_dict = {(x, y): path for x, y, path in tile_paths}                
+
+        delayed_tiles = [[
+            delayed(png2elevation)(tile_dict[(x, y)])
+            for x in xs
+        ] for y in ys]
+
+        # Wrap in dask.array
+        sample_tile = np.array(png2elevation(tile_paths[0][2]))
+        tile_shape = sample_tile.shape
+        dask_tiles = da.block([
+            [da.from_delayed(t, shape=tile_shape, dtype=sample_tile.dtype) for t in row]
+            for row in delayed_tiles
+        ])
+
+
+        # Compute x and y coordinates
+        x0, y0 = num2xy(ix0, iy1 + 1, izoom)  # lower left
+        x1, y1 = num2xy(ix1 + 1, iy0, izoom)  # upper right
+        # Data is stored in centres of pixels so we need to shift the coordinates
+        dx = (x1 - x0) / nx
+        dy = (y1 - y0) / ny
+        x = np.linspace(x0 + 0.5 * dx, x1 - 0.5 * dx, nx)
+        y = np.linspace(y0 + 0.5 * dy, y1 - 0.5 * dy, ny)
+
+
+        # Build xarray object
+        elevation =  xr.DataArray(
+            np.flipud(dask_tiles),
+            dims=("y", "x"),
+            coords={"x": x, "y": y},
+            name="elevtn",
+            attrs={
+                "crs": "EPSG:3857",
+                "z_level": izoom,
+            }
+        )
+        
+        if chunk_size is not None:
+            # Chunk the data for better performance
+            elevation = elevation.chunk({"x": chunk_size, "y": chunk_size})
+
+        return elevation
+
+
 
     def generate_topobathy_tiles(
         self,

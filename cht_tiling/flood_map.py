@@ -32,7 +32,7 @@ class FloodMap:
         cmap: str = None,
         cmin: float = None,
         cmax: float = None,
-        color_values: list = None
+        color_values: list = None,
     ):
         """
         Initialize the FloodMap class with optional parameters.
@@ -79,16 +79,33 @@ class FloodMap:
         self.legend["title"] = "Flood Depth (m)"
         self.legend["contour"] = []
         # Set default
-        self.legend["contour"].append({"color": "#FF0000", "lower_value": 2.0, "text": "2.0+ m"})
         self.legend["contour"].append(
-                {"color": "#FFA500", "lower_value": 1.0, "upper_value": 2.0, "text": "1.0–2.0 m"}
-            )
+            {"color": "#FF0000", "lower_value": 2.0, "text": "2.0+ m"}
+        )
         self.legend["contour"].append(
-                {"color": "#FFFF00", "lower_value": 0.3, "upper_value": 1.0, "text": "0.3–1.0 m"}
-            )
+            {
+                "color": "#FFA500",
+                "lower_value": 1.0,
+                "upper_value": 2.0,
+                "text": "1.0–2.0 m",
+            }
+        )
         self.legend["contour"].append(
-                {"color": "#00FF00", "lower_value": 0.1, "upper_value": 0.3, "text": "0.1–0.3 m"}
-            )
+            {
+                "color": "#FFFF00",
+                "lower_value": 0.3,
+                "upper_value": 1.0,
+                "text": "0.3–1.0 m",
+            }
+        )
+        self.legend["contour"].append(
+            {
+                "color": "#00FF00",
+                "lower_value": 0.1,
+                "upper_value": 0.3,
+                "text": "0.1–0.3 m",
+            }
+        )
 
     def set_topobathy_file(self, topobathy_file: Union[str, Path]) -> None:
         """
@@ -270,7 +287,6 @@ class FloodMap:
             self.ds.to_netcdf(output_file)
 
         elif output_file.endswith(".tif"):
-
             # Write to geotiff
             if self.cmap is not None:
                 # Get RBG data array
@@ -343,7 +359,7 @@ class FloodMap:
                 cmap=self.cmap,
                 cmin=self.cmin,
                 cmax=self.cmax,
-                color_values= self.color_values,
+                color_values=self.color_values,
             )
 
             # Now reproject to EPSG:3857 and create a png file
@@ -596,11 +612,11 @@ def get_appropriate_overview_level(
 
 
 def get_rgb_data_array(
-    da: xr.DataArray, 
-    cmap: str = None, 
-    cmin: float = None, 
+    da: xr.DataArray,
+    cmap: str = None,
+    cmin: float = None,
     cmax: float = None,
-    color_values: list = None
+    color_values: list = None,
 ) -> xr.DataArray:
     """
     Convert a DataArray to RGB using either a colormap or discrete color values.
@@ -629,17 +645,16 @@ def get_rgb_data_array(
     if color_values is not None:
         # Get the shape and flatten the data
         ny, nx = da.shape
-        zz = da.values
+        zz = da.to_numpy()
         # Use discrete color values
         rgba = np.zeros((ny, nx, 4), "uint8")
-        
+
         # Determine value based on user-defined ranges
         for color_value in color_values:
             if "upper_value" in color_value and "lower_value" in color_value:
                 # Both bounds specified
                 inr = np.logical_and(
-                    zz >= color_value["lower_value"], 
-                    zz < color_value["upper_value"]
+                    zz >= color_value["lower_value"], zz < color_value["upper_value"]
                 )
             elif "lower_value" in color_value and "upper_value" not in color_value:
                 # Only lower bound specified (>= lower_value)
@@ -657,12 +672,12 @@ def get_rgb_data_array(
             rgba[valid, 1] = color_value["rgb"][1]
             rgba[valid, 2] = color_value["rgb"][2]
             rgba[valid, 3] = 255
-        
+
     else:
         # Use continuous colormap (existing functionality)
         if cmap is None:
             raise ValueError("Either color_values or cmap must be provided")
-            
+
         # Normalize the data
         if cmin is None:
             cmin = da.min()

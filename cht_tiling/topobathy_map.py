@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from typing import Union
 
@@ -8,16 +7,16 @@ import numpy as np
 import rasterio
 import rioxarray
 import xarray as xr
-from matplotlib import cm
 from matplotlib.colors import BoundaryNorm, ListedColormap
 from matplotlib.patches import Patch
-from PIL import Image
 from pyproj import Transformer
 from rasterio.warp import Resampling
 
-import cht_tiling.fileops as fo
-from cht_tiling.utils import deg2num, num2deg, png2elevation, png2int
-from cht_tiling.flood_map import get_appropriate_overview_level, get_rgb_data_array, reproject_bbox
+from cht_tiling.flood_map import (
+    get_appropriate_overview_level,
+    get_rgb_data_array,
+    reproject_bbox,
+)
 
 
 class TopoBathyMap:
@@ -96,7 +95,9 @@ class TopoBathyMap:
         Read geotiff file with elevation data.
         """
         self.ds = xr.Dataset()
-        self.ds[self.data_array_name] = rioxarray.open_rasterio(tiffile, masked=True).squeeze()
+        self.ds[self.data_array_name] = rioxarray.open_rasterio(
+            tiffile, masked=True
+        ).squeeze()
 
     def make(
         self,
@@ -130,13 +131,13 @@ class TopoBathyMap:
             zb = rioxarray.open_rasterio(self.zb)
         else:
             zb = rioxarray.open_rasterio(self.zb, overview_level=overview_level)
-        
+
         zb = zb * self.scale_factor  # Apply scale factor
-        
+
         # Remove band dimension if it is 1, and squeeze the array to 2D
         if "band" in zb.dims and zb.sizes["band"] == 1:
             zb = zb.squeeze(dim="band", drop=True)
-        
+
         if bbox is not None:
             zb = zb.rio.clip_box(minx=bbox[0], miny=bbox[1], maxx=bbox[2], maxy=bbox[3])
 

@@ -15,7 +15,7 @@ import toml
 import xarray as xr
 from botocore import UNSIGNED
 from botocore.client import Config
-from dask.array import da
+import dask.array as da
 from dask import delayed
 
 from cht_tiling.indices import make_index_tiles
@@ -109,263 +109,158 @@ class TiledWebMap:
                 zoom_level.ij_available = iav * n + jav
                 self.zoom_levels.append(zoom_level)
 
-    def get_data(self, xl, yl, max_pixel_size, crs=None, waitbox=None):
-        # xl and yl are in CRS 3857
-        # max_pixel_size is in meters
-        # returns x, y, and z in CRS 3857
-        # Check if availability matrix exists but has not been loaded
-        if self.availability_exists and not self.availability_loaded:
-            self.read_availability()
-            self.availability_loaded = True
-
-        # Determine zoom level
-        izoom = get_zoom_level_for_resolution(max_pixel_size)
-        izoom = min(izoom, self.max_zoom)
-
-        # Determine the indices of required tiles
-        ix0, iy0 = xy2num(xl[0], yl[1], izoom)
-        ix1, iy1 = xy2num(xl[1], yl[0], izoom)
-
-        # Make sure indices are within bounds
-        ix0 = max(0, ix0)
-        iy0 = max(0, iy0)
-        # ix1 = min(2**izoom - 1, ix1)
-        iy1 = min(2**izoom - 1, iy1)
-
-        # Create empty array
-        nx = (ix1 - ix0 + 1) * 256
-        ny = (iy1 - iy0 + 1) * 256
-        z = np.empty((ny, nx))
-        z[:] = np.nan
-
-        # First try to download missing tiles (it's faster if we can do this in parallel)
+    def download_missing_tiles(self, ix0, ix1, iy0, iy1, izoom, waitbox=None):
+        """Ensure all required tiles for given range exist locally."""
         download_file_list = []
         download_key_list = []
 
-        if self.download:
-            for i in range(ix0, ix1 + 1):
-                itile = np.mod(i, 2**izoom)  # wrap around
-                ifolder = str(itile)
-                for j in range(iy0, iy1 + 1):
-                    png_file = os.path.join(
-                        self.path, str(izoom), ifolder, str(j) + ".png"
-                    )
-                    if not os.path.exists(png_file):
-                        # File does not yet exist
-                        if self.availability_exists:
-                            # Check availability of the tile in matrix.
-                            if not self.check_availability(i, j, izoom):
-                                # Tile is also not available for download
-                                continue
-                        # Add to download_list
-                        download_file_list.append(png_file)
-                        download_key_list.append(
-                            f"{self.s3_key}/{str(izoom)}/{ifolder}/{str(j)}.png"
-                        )
-                        # Make sure the folder exists
-                        if not Path(png_file).parent.exists():
-                            Path(png_file).parent.mkdir(parents=True, exist_ok=True)
-
-            # Now download the missing tiles
-            if len(download_file_list) > 0:
-                if waitbox is not None:
-                    wb = waitbox("Downloading topography tiles ...")
-                # make boto s
-                if self.s3_client is None:
-                    self.s3_client = boto3.client(
-                        "s3", config=Config(signature_version=UNSIGNED)
-                    )
-                # Download missing tiles
-                with ThreadPool() as pool:
-                    pool.starmap(
-                        self.download_tile_parallel,
-                        [
-                            (self.s3_bucket, key, file)
-                            for key, file in zip(download_key_list, download_file_list)
-                        ],
-                    )
-                if waitbox is not None:
-                    wb.close()
-
-        # Loop over required tiles
         for i in range(ix0, ix1 + 1):
             itile = np.mod(i, 2**izoom)  # wrap around
             ifolder = str(itile)
             for j in range(iy0, iy1 + 1):
                 png_file = os.path.join(self.path, str(izoom), ifolder, str(j) + ".png")
-
                 if not os.path.exists(png_file):
-                    continue
+                    # Check availability matrix if present
+                    if self.availability_exists and not self.check_availability(i, j, izoom):
+                        continue
+                    download_file_list.append(png_file)
+                    download_key_list.append(f"{self.s3_key}/{izoom}/{ifolder}/{j}.png")
+                    Path(png_file).parent.mkdir(parents=True, exist_ok=True)
 
-                # Read the png file
-                valt = png2elevation(
-                    png_file,
-                    encoder=self.encoder,
-                    encoder_vmin=self.encoder_vmin,
-                    encoder_vmax=self.encoder_vmax,
+        if len(download_file_list) > 0:
+            if waitbox is not None:
+                wb = waitbox("Downloading topography tiles ...")
+            if self.s3_client is None:
+                self.s3_client = boto3.client("s3", config=Config(signature_version=UNSIGNED))
+            with ThreadPool() as pool:
+                pool.starmap(
+                    self.download_tile_parallel,
+                    [(self.s3_bucket, key, file) for key, file in zip(download_key_list, download_file_list)],
                 )
+            if waitbox is not None:
+                wb.close()
 
-                # Fill array
-                ii0 = (i - ix0) * 256
-                ii1 = ii0 + 256
-                jj0 = (j - iy0) * 256
-                jj1 = jj0 + 256
-                z[jj0:jj1, ii0:ii1] = valt
+    def get_tile_paths(self, ix0, ix1, iy0, iy1, izoom):
+        """Return dict of {(ix, iy): local_path} for available tiles."""
+        tile_dict = {}
+        for i in range(ix0, ix1 + 1):
+            itile = np.mod(i, 2**izoom)
+            ifolder = str(itile)
+            for j in range(iy0, iy1 + 1):
+                png_file = os.path.join(self.path, str(izoom), ifolder, f"{j}.png")
+                if os.path.exists(png_file):
+                    tile_dict[(i, j)] = png_file
+        return tile_dict
+
+    def get_data(self, xl, yl, max_pixel_size, crs=None, waitbox=None):
+        if self.availability_exists and not self.availability_loaded:
+            self.read_availability()
+            self.availability_loaded = True
+
+        # Determine zoom level
+        izoom = min(get_zoom_level_for_resolution(max_pixel_size), self.max_zoom)
+        # Determine the indices of required tiles
+        ix0, iy0 = xy2num(xl[0], yl[1], izoom)
+        ix1, iy1 = xy2num(xl[1], yl[0], izoom)
+        # Make sure indices are within bounds
+        ix0, iy0 = max(0, ix0), max(0, iy0)
+        iy1 = min(2**izoom - 1, iy1)
+
+        # Download missing tiles if required
+        if self.download:
+            self.download_missing_tiles(ix0, ix1, iy0, iy1, izoom, waitbox=waitbox)
+
+        # Get dict of available tiles
+        tile_dict = self.get_tile_paths(ix0, ix1, iy0, iy1, izoom)
+
+        # Create empty array
+        nx = (ix1 - ix0 + 1) * 256
+        ny = (iy1 - iy0 + 1) * 256
+        z = np.full((ny, nx), np.nan)
+
+        for (i, j), png_file in tile_dict.items():
+            # Read elevation data from png file
+            valt = png2elevation(
+                png_file,
+                encoder=self.encoder,
+                encoder_vmin=self.encoder_vmin,
+                encoder_vmax=self.encoder_vmax,
+            )
+
+            # Fill array
+            ii0, jj0 = (i - ix0) * 256, (j - iy0) * 256
+            z[jj0:jj0+256, ii0:ii0+256] = valt
 
         # Compute x and y coordinates
-        x0, y0 = num2xy(ix0, iy1 + 1, izoom)  # lower left
-        x1, y1 = num2xy(ix1 + 1, iy0, izoom)  # upper right
+        x0, y0 = num2xy(ix0, iy1 + 1, izoom)
+        x1, y1 = num2xy(ix1 + 1, iy0, izoom)
         # Data is stored in centres of pixels so we need to shift the coordinates
-        dx = (x1 - x0) / nx
-        dy = (y1 - y0) / ny
-        x = np.linspace(x0 + 0.5 * dx, x1 - 0.5 * dx, nx)
-        y = np.linspace(y0 + 0.5 * dy, y1 - 0.5 * dy, ny)
-        z = np.flipud(z)
+        dx, dy = (x1 - x0) / nx, (y1 - y0) / ny
+        x = np.linspace(x0 + 0.5*dx, x1 - 0.5*dx, nx)
+        y = np.linspace(y0 + 0.5*dy, y1 - 0.5*dy, ny)
 
-        return x, y, z
+        return x, y, np.flipud(z)
 
     def get_data_lazy(self, xl, yl, max_pixel_size, chunk_size=None, waitbox=None):
-        """Get data from webmercator tiles as a dask array"""
-        # Check if availability matrix exists but has not been loaded
         if self.availability_exists and not self.availability_loaded:
             self.read_availability()
             self.availability_loaded = True
 
         # Determine zoom level
-        izoom = get_zoom_level_for_resolution(max_pixel_size)
-        izoom = min(izoom, self.max_zoom)
-
+        izoom = min(get_zoom_level_for_resolution(max_pixel_size), self.max_zoom)
         # Determine the indices of required tiles
         ix0, iy0 = xy2num(xl[0], yl[1], izoom)
         ix1, iy1 = xy2num(xl[1], yl[0], izoom)
-
         # Make sure indices are within bounds
-        ix0 = max(0, ix0)
-        iy0 = max(0, iy0)
-        # ix1 = min(2**izoom - 1, ix1)
+        ix0, iy0 = max(0, ix0), max(0, iy0)
         iy1 = min(2**izoom - 1, iy1)
 
-        # Create empty array
-        nx = (ix1 - ix0 + 1) * 256
-        ny = (iy1 - iy0 + 1) * 256
-        z = np.empty((ny, nx))
-        z[:] = np.nan
-
-        # First try to download missing tiles (it's faster if we can do this in parallel)
-        download_file_list = []
-        download_key_list = []
-
+        # Download missing tiles if required
         if self.download:
-            for i in range(ix0, ix1 + 1):
-                itile = np.mod(i, 2**izoom)  # wrap around
-                ifolder = str(itile)
-                for j in range(iy0, iy1 + 1):
-                    png_file = os.path.join(
-                        self.path, str(izoom), ifolder, str(j) + ".png"
-                    )
-                    if not os.path.exists(png_file):
-                        # File does not yet exist
-                        if self.availability_exists:
-                            # Check availability of the tile in matrix.
-                            if not self.check_availability(i, j, izoom):
-                                # Tile is also not available for download
-                                continue
-                        # Add to download_list
-                        download_file_list.append(png_file)
-                        download_key_list.append(
-                            f"{self.s3_key}/{str(izoom)}/{ifolder}/{str(j)}.png"
-                        )
-                        # Make sure the folder exists
-                        if not Path(png_file).parent.exists():
-                            Path(png_file).parent.mkdir(parents=True, exist_ok=True)
+            self.download_missing_tiles(ix0, ix1, iy0, iy1, izoom, waitbox=waitbox)
 
-            # Now download the missing tiles
-            if len(download_file_list) > 0:
-                if waitbox is not None:
-                    wb = waitbox("Downloading topography tiles ...")
-                # make boto s
-                if self.s3_client is None:
-                    self.s3_client = boto3.client(
-                        "s3", config=Config(signature_version=UNSIGNED)
-                    )
-                # Download missing tiles
-                with ThreadPool() as pool:
-                    pool.starmap(
-                        self.download_tile_parallel,
-                        [
-                            (self.s3_bucket, key, file)
-                            for key, file in zip(download_key_list, download_file_list)
-                        ],
-                    )
-                if waitbox is not None:
-                    wb.close()
+        # Get dict of available tiles
+        tile_dict = self.get_tile_paths(ix0, ix1, iy0, iy1, izoom)
+        xs = sorted(set(i for i, _ in tile_dict.keys()))
+        ys = sorted(set(j for _, j in tile_dict.keys()))
 
-        # Prepare lists for tiles to be read
-        tile_paths = []
-        xs, ys = [], []
+        # Create dask array from tiles, without loading all tiles into memory
+        delayed_tiles = [
+            [delayed(png2elevation)(tile_dict[(x, y)]) for x in xs if (x, y) in tile_dict]
+            for y in ys
+        ]
 
-        # Loop over required tiles
-        for i in range(ix0, ix1 + 1):
-            itile = np.mod(i, 2**izoom)  # wrap around
-            ifolder = str(itile)
-            for j in range(iy0, iy1 + 1):
-                png_file = os.path.join(self.path, str(izoom), ifolder, str(j) + ".png")
-                if not os.path.exists(png_file):
-                    continue
-
-                tile_paths.append(png_file)
-                xs.append(i)
-                ys.append(j)
-
-
-        tile_paths.sort()
-        xs = sorted(set(xs))
-        ys = sorted(set(ys))
-        tile_dict = {(x, y): path for x, y, path in tile_paths}                
-
-        delayed_tiles = [[
-            delayed(png2elevation)(tile_dict[(x, y)])
-            for x in xs
-        ] for y in ys]
-
-        # Wrap in dask.array
-        sample_tile = np.array(png2elevation(tile_paths[0][2]))
+        sample_tile = np.array(png2elevation(next(iter(tile_dict.values()))))
         tile_shape = sample_tile.shape
+
         dask_tiles = da.block([
             [da.from_delayed(t, shape=tile_shape, dtype=sample_tile.dtype) for t in row]
             for row in delayed_tiles
         ])
 
-
         # Compute x and y coordinates
-        x0, y0 = num2xy(ix0, iy1 + 1, izoom)  # lower left
-        x1, y1 = num2xy(ix1 + 1, iy0, izoom)  # upper right
+        x0, y0 = num2xy(ix0, iy1 + 1, izoom)
+        x1, y1 = num2xy(ix1 + 1, iy0, izoom)
+        nx, ny = dask_tiles.shape[1], dask_tiles.shape[0]
         # Data is stored in centres of pixels so we need to shift the coordinates
-        dx = (x1 - x0) / nx
-        dy = (y1 - y0) / ny
-        x = np.linspace(x0 + 0.5 * dx, x1 - 0.5 * dx, nx)
-        y = np.linspace(y0 + 0.5 * dy, y1 - 0.5 * dy, ny)
+        dx, dy = (x1 - x0) / nx, (y1 - y0) / ny
+        x = np.linspace(x0 + 0.5*dx, x1 - 0.5*dx, nx)
+        y = np.linspace(y0 + 0.5*dy, y1 - 0.5*dy, ny)
 
-
-        # Build xarray object
-        elevation =  xr.DataArray(
+        # Create xarray DataArray
+        elevation = xr.DataArray(
             np.flipud(dask_tiles),
             dims=("y", "x"),
             coords={"x": x, "y": y},
             name="elevtn",
-            attrs={
-                "crs": "EPSG:3857",
-                "z_level": izoom,
-            }
+            attrs={"crs": "EPSG:3857", "z_level": izoom},
         )
-        
+
+        # Optionally rechunk the data
         if chunk_size is not None:
-            # Chunk the data for better performance
             elevation = elevation.chunk({"x": chunk_size, "y": chunk_size})
 
         return elevation
-
-
 
     def generate_topobathy_tiles(
         self,

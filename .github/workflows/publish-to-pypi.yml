@@ -95,31 +95,27 @@ jobs:
     needs: [details, check_pypi]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: conda-incubator/setup-miniconda@v3
+      - uses: actions/checkout@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
-          auto-update-conda: true
-          channels: conda-forge
+          version: "0.8.22"
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Create environment
+      - name: Install package
         shell: bash -el {0}
         run: |
-          conda create -n publish python=${{ env.PYTHON_VERSION }}
-
-      - name: Install Build tools
-        shell: bash -el {0}
-        run: |
-          conda install -n publish pip setuptools wheel python-build
-
-      - name: Install dependencies
-        shell: bash -el {0}
-        run: |
-          conda run -n publish pip install .
+          uv sync --locked --all-extras --dev
 
       - name: Build source and wheel distribution
         run: |
-          conda run -n publish python -s -m build
+          uv build
+
+      - name: Validate wheel distribution
+        run: uv run --isolated --no-project --with dist/*.whl python -c "import cht_tiling; print(cht_tiling.__version__)"
+
+      - name: Validate source distribution
+        run: uv run --isolated --no-project --with dist/*.tar.gz python -c "import cht_tiling; print(cht_tiling.__version__)"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -143,8 +139,8 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish distribution to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Publish
+        run: uv publish
 
   github_release:
     name: Create GitHub Release

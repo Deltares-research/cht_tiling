@@ -6,6 +6,8 @@ Created on Thu May 27 14:51:04 2021
 """
 
 import os
+import io
+import concurrent.futures
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
@@ -17,6 +19,7 @@ from botocore import UNSIGNED
 from botocore.client import Config
 import dask.array as da
 from dask import delayed
+import s3fs
 
 from cht_tiling.indices import make_index_tiles
 from cht_tiling.topobathy import (
@@ -91,23 +94,40 @@ class TiledWebMap:
             for key in tml:
                 setattr(self, key, tml[key])
 
-    def read_availability(self):
-        # Read netcdf file with dimensions
-        nc_file = os.path.join(self.path, "available_tiles.nc")
+    def read_availability(self, source="local"):
+        """
+        Read netcdf availability info.
 
-        with xr.open_dataset(nc_file) as ds:
-            self.zoom_levels = []
-            # Loop through zoom levels
-            for izoom in range(self.max_zoom + 1):
-                n = 2**izoom
-                iname = f"i_available_{izoom}"
-                jname = f"j_available_{izoom}"
-                iav = ds[iname].to_numpy()[:]
-                jav = ds[jname].to_numpy()[:]
-                zoom_level = ZoomLevel()
-                zoom_level.ntiles = n
-                zoom_level.ij_available = iav * n + jav
-                self.zoom_levels.append(zoom_level)
+        Parameters
+        ----------
+        source : str
+            "local" for local filesystem, "s3" for S3.
+        """
+        if source == "local":
+            nc_file = os.path.join(self.path, "available_tiles.nc")
+            ds = xr.open_dataset(nc_file)
+        elif source == "s3":
+            s3_path = f"s3://{self.s3_bucket}/{self.s3_key}/available_tiles.nc"
+            s3 = s3fs.S3FileSystem(anon=True)
+            with s3.open(s3_path, "rb") as f:
+                data_bytes = f.read()
+            ds = xr.open_dataset(io.BytesIO(data_bytes), engine="h5netcdf")
+        else:
+            raise ValueError("source must be 'local' or 's3'")
+
+        self.zoom_levels = []
+        for izoom in range(self.max_zoom + 1):
+            n = 2 ** izoom
+            iname = f"i_available_{izoom}"
+            jname = f"j_available_{izoom}"
+            iav = ds[iname].to_numpy()
+            jav = ds[jname].to_numpy()
+            zoom_level = ZoomLevel()
+            zoom_level.ntiles = n
+            zoom_level.ij_available = iav * n + jav
+            self.zoom_levels.append(zoom_level)
+
+        ds.close()
 
     def download_missing_tiles(self, ix0, ix1, iy0, iy1, izoom, waitbox=None):
         """Ensure all required tiles for given range exist locally."""
@@ -140,16 +160,54 @@ class TiledWebMap:
             if waitbox is not None:
                 wb.close()
 
-    def get_tile_paths(self, ix0, ix1, iy0, iy1, izoom):
-        """Return dict of {(ix, iy): local_path} for available tiles."""
-        tile_dict = {}
+    def _candidate_tiles(self, ix0, ix1, iy0, iy1, izoom, location="local"):
+        """
+        Yield ((i, j), path) pairs for tiles that *may* exist,
+        based on availability (if present).
+        location: "local" or "s3"
+        """
         for i in range(ix0, ix1 + 1):
             itile = np.mod(i, 2**izoom)
             ifolder = str(itile)
             for j in range(iy0, iy1 + 1):
-                png_file = os.path.join(self.path, str(izoom), ifolder, f"{j}.png")
-                if os.path.exists(png_file):
-                    tile_dict[(i, j)] = png_file
+                if self.availability_exists and not self.check_availability(i, j, izoom):
+                    continue
+                if location == "local":
+                    path = os.path.join(self.path, str(izoom), ifolder, f"{j}.png")
+                else:
+                    path = f"{self.s3_bucket}/{self.s3_key}/{izoom}/{ifolder}/{j}.png"
+                yield (i, j), path
+
+    def get_tile_paths(self, ix0, ix1, iy0, iy1, izoom, source="local"):
+        """Return dict of {(ix, iy): path} for available tiles (local or S3)."""
+        candidates = list(self._candidate_tiles(ix0, ix1, iy0, iy1, izoom, source))
+        tile_dict = {}
+
+        if source == "local":
+            # Only keep those that exist locally
+            for (i, j), path in candidates:
+                if os.path.exists(path):
+                    tile_dict[(i, j)] = path
+
+        elif source == "s3":
+            s3 = s3fs.S3FileSystem(anon=True)
+            if self.availability_exists:
+                # Trust availability, no need to HEAD
+                tile_dict.update(dict(candidates))
+            else:
+                # Parallel HEAD checks
+                import concurrent.futures
+                def check_exists(item):
+                    (i, j), path = item
+                    if s3.exists(path):
+                        return (i, j), path
+                    return None
+                with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+                    for result in executor.map(check_exists, candidates):
+                        if result:
+                            (i, j), path = result
+                            tile_dict[(i, j)] = path
+
         return tile_dict
 
     def get_data(self, xl, yl, max_pixel_size, crs=None, waitbox=None):
@@ -201,36 +259,52 @@ class TiledWebMap:
 
         return x, y, np.flipud(z)
 
-    def get_data_lazy(self, xl, yl, max_pixel_size, chunk_size=None, waitbox=None):
+    def get_data_lazy(self, xl, yl, max_pixel_size, chunk_size=None, waitbox=None, source="local"):
         if self.availability_exists and not self.availability_loaded:
-            self.read_availability()
+            self.read_availability(source=source)
             self.availability_loaded = True
 
         # Determine zoom level
         izoom = min(get_zoom_level_for_resolution(max_pixel_size), self.max_zoom)
+
         # Determine the indices of required tiles
         ix0, iy0 = xy2num(xl[0], yl[1], izoom)
         ix1, iy1 = xy2num(xl[1], yl[0], izoom)
-        # Make sure indices are within bounds
         ix0, iy0 = max(0, ix0), max(0, iy0)
-        iy1 = min(2**izoom - 1, iy1)
+        iy1 = min(2 ** izoom - 1, iy1)
 
-        # Download missing tiles if required
-        if self.download:
+        # Download missing tiles if needed
+        if source == "local" and self.download:
             self.download_missing_tiles(ix0, ix1, iy0, iy1, izoom, waitbox=waitbox)
 
         # Get dict of available tiles
-        tile_dict = self.get_tile_paths(ix0, ix1, iy0, iy1, izoom)
+        tile_dict = self.get_tile_paths(ix0, ix1, iy0, iy1, izoom, source=source)
+
+        # S3 setup if needed
+        if source == "s3":
+            s3 = s3fs.S3FileSystem(anon=True)
+            def tile_to_array(s3_path):
+                with s3.open(s3_path, 'rb') as f:
+                    return png2elevation(f)
+            # Map S3 paths to function
+            tile_dict = {
+                (x, y): f"{self.s3_bucket}/{self.s3_key}/{izoom}/{x}/{y}.png"
+                for (x, y) in tile_dict.keys()
+            }
+            tile_loader = tile_to_array
+        else:
+            tile_loader = png2elevation
+
         xs = sorted(set(i for i, _ in tile_dict.keys()))
         ys = sorted(set(j for _, j in tile_dict.keys()))
 
         # Create dask array from tiles, without loading all tiles into memory
         delayed_tiles = [
-            [delayed(png2elevation)(tile_dict[(x, y)]) for x in xs if (x, y) in tile_dict]
+            [delayed(tile_loader)(tile_dict[(x, y)]) for x in xs if (x, y) in tile_dict]
             for y in ys
         ]
 
-        sample_tile = np.array(png2elevation(next(iter(tile_dict.values()))))
+        sample_tile = np.array(tile_loader(next(iter(tile_dict.values()))))
         tile_shape = sample_tile.shape
 
         dask_tiles = da.block([

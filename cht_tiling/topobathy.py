@@ -62,9 +62,7 @@ def make_topobathy_tiles_top_level(
         zoom_range = [0, zoom_max]
     elif zoom_range is None:
         # Give error
-        raise ValueError(
-            "zoom_range must be provided if index_path is not provided"
-        )
+        raise ValueError("zoom_range must be provided if index_path is not provided")
 
     # transformer_3857_to_crs = Transformer.from_crs(
     #     CRS.from_epsg(3857), crs_data, always_xy=True
@@ -110,7 +108,9 @@ def make_topobathy_tiles_top_level(
     else:
         if lon_range is None or lat_range is None:
             # Get the lon_range and lat_range from the data_dict (should add this functionality to bathymetry_database)
-            lon_range, lat_range = bathymetry_database.get_lon_lat_range(data_dict["name"])
+            lon_range, lat_range = bathymetry_database.get_lon_lat_range(
+                data_dict["name"]
+            )
 
         ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
         ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
@@ -300,9 +300,7 @@ def bbox_xy2latlon(x0, x1, y0, y1, crs):
     return lon_min, lon_max, lat_min, lat_max
 
 
-def create_highest_zoom_level_tile(
-    zoom_path_i, i, j, izoom, twm, data_dict, options        
-):
+def create_highest_zoom_level_tile(zoom_path_i, i, j, izoom, twm, data_dict, options):
     file_name = os.path.join(zoom_path_i, str(j) + ".png")
     transformer_4326_to_3857 = options["transformer_4326_to_3857"]
     # transformer_3857_to_crs = options["transformer_3857_to_crs"]

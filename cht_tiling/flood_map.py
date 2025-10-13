@@ -47,11 +47,10 @@ class FloodMap:
         self.hmin = 0.1
         self.max_pixel_size = 0.0
         self.data_array_name = "water_depth"
-        # self.cmap = "jet"
-        self.color_values = None
-        self.cmap = None
-        self.cmin = None
-        self.cmax = None
+        self.color_values = "default"
+        self.cmap = "jet"
+        self.cmin = 0.0
+        self.cmax = 1.0
         self.discrete_colors = False
         self.ds = xr.Dataset()
 
@@ -326,6 +325,7 @@ class FloodMap:
                 cmap=self.cmap,
                 cmin=self.cmin,
                 cmax=self.cmax,
+                discrete_colors=self.discrete_colors,
             )
 
             # Now reproject to EPSG:3857 and create a png file
@@ -347,6 +347,51 @@ class FloodMap:
             rgba = rgb_crop.transpose("y", "x", "band").values.astype("uint8")
 
             plt.imsave(file_name, rgba)
+
+            # Need to set the legend dict (used in Guitares map layer)
+
+            if self.discrete_colors:
+                self.legend = {}
+                self.legend["title"] = "Flood Depth (m)"
+                self.legend["contour"] = []
+
+                if isinstance(self.color_values, str):
+                    # Use default
+                    color_values = []
+                    color_values.append(
+                        {"color": "lightgreen", "lower_value": 0.1, "upper_value": 0.3}
+                    )
+                    color_values.append(
+                        {"color": "yellow", "lower_value": 0.3, "upper_value": 1.0}
+                    )
+                    color_values.append(
+                        {"color": "#FFA500", "lower_value": 1.0, "upper_value": 2.0}
+                    )
+                    color_values.append({"color": "red", "lower_value": 2.0})
+                else:
+                    color_values = self.color_values    
+
+                for cv in color_values:
+                    legend_item = {}
+                    legend_item["color"] = cv["color"]
+                    if "upper_value" in cv and "lower_value" in cv:
+                        legend_item["lower_value"] = cv["lower_value"]
+                        legend_item["upper_value"] = cv["upper_value"]
+                        legend_item["text"] = f"{cv['lower_value']}–{cv['upper_value']} m"
+                    elif "upper_value" in cv:
+                        legend_item["upper_value"] = cv["upper_value"]
+                        legend_item["text"] = f"{cv['lower_value']}- m"
+                    else:
+                        legend_item["lower_value"] = cv["lower_value"]
+                        legend_item["text"] = f"{cv['lower_value']}+ m"
+                    self.legend["contour"].append(legend_item)
+
+            else:
+                self.legend = {}
+                self.legend["title"] = "Flood Depth (m)"
+                self.legend["cmin"] = self.cmin
+                self.legend["cmax"] = self.cmax
+                self.legend["cmap"] = self.cmap
 
             return True
 
@@ -580,7 +625,7 @@ def get_appropriate_overview_level(
 
 
 def get_rgb_data_array(
-    da: xr.DataArray, cmap: str, cmin: float = None, cmax: float = None, color_values=None
+    da: xr.DataArray, cmap: str, cmin: float = None, cmax: float = None, color_values=None, discrete_colors=False
 ) -> xr.DataArray:
     """
     Convert a DataArray to RGB using a colormap.
@@ -602,10 +647,8 @@ def get_rgb_data_array(
         The RGB DataArray.
     """
 
-    if color_values is None:
-        discrete_colors = False
-    else:
-        discrete_colors = True
+    if discrete_colors:
+
         if isinstance(color_values, str):
             # Use default
             color_values = []
@@ -620,7 +663,6 @@ def get_rgb_data_array(
             )
             color_values.append({"color": "red", "lower_value": 2.0})
 
-    if discrete_colors:
         # Initialize an RGBA array with zeros
         rgba = np.zeros((da.shape[0], da.shape[1], 4), dtype=np.float32)
         # Loop through color classes

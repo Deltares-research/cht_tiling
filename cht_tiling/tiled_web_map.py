@@ -16,8 +16,10 @@ import xarray as xr
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from cht_tiling.indices import make_index_tiles
-from cht_tiling.topobathy import (
+from cht_tiling.index_tiles import make_index_tiles
+from cht_tiling.data_tiles import make_data_tiles
+from cht_tiling.rgba_tiles import make_rgba_tiles
+from cht_tiling.topobathy_tiles import (
     make_topobathy_tiles_lower_levels,
     make_topobathy_tiles_top_level,
 )
@@ -39,31 +41,67 @@ class ZoomLevel:
 
 
 class TiledWebMap:
-    def __init__(self, path, name, parameter="elevation"):
-        # Parameter may be one of the following: elevation, floodmap, index, data, rgb
-        if parameter not in ["elevation", "floodmap", "index", "data", "rgb"]:
-            raise ValueError(
-                "Parameter must be one of the following: elevation, floodmap, index, data, rgb"
-            )
+    def __init__(self,
+                 path: str | Path,                 
+                 data=None,
+                 type="rgba",
+                 parameter="other",
+                 encoder="terrarium",
+                 encoder_vmin=None,
+                 encoder_vmax=None,
+                 name="unknown",
+                 long_name="Unknown dataset",
+                 url=None,
+                 npix=256,
+                 max_zoom=0,
+                 s3_client=None,
+                 s3_bucket=None,
+                 s3_key=None,
+                 s3_region=None,
+                 source="unknown",
+                 vertical_reference_level="MSL",
+                 vertical_units="m",
+                 difference_with_msl=0.0,
+                 index_path=None,
+                 topo_path=None,
+                 zoom_range=None,
+                 color_values=None,
+                 caxis=None,
+                 zbmax=0.0,
+                 minimum_depth=0.05,
+                 bathymetry_database=None,
+                 lon_range=None,
+                 lat_range=None,
+                 z_range=[-999999.0, 999999.0],
+                 dx_max_zoom=None,
+                 write_metadata=False,
+                 write_availability=True,
+                 make_lower_levels=True,
+                 make_highest_level=True,
+                 skip_existing=False,
+                 make_webviewer=True,
+                 merge=True,
+                 parallel=True,
+                 interpolation_method="linear",
+                 quiet=False,
+                 ):
 
-        self.name = name
-        self.long_name = name
-        self.path = path
-        self.url = None
-        self.npix = 256
-        self.parameter = "elevation"
-        self.encoder = "terrarium"
-        self.encoder_vmin = None
-        self.encoder_vmax = None
-        self.max_zoom = 0
-        self.s3_client = None
-        self.s3_bucket = None
-        self.s3_key = None
-        self.s3_region = None
-        self.source = "unknown"
-        self.vertical_reference_level = "MSL"
-        self.vertical_units = "m"
-        self.difference_with_msl = 0.0
+        """Tiled Web Map class"""
+
+        # Set all keyword/value pairs as attributes
+        for key, value in locals().items():
+            if key in ("self", "path"):
+                continue
+            setattr(self, key, value)
+
+        self.path = str(path)
+
+        # # Parameter may be one of the following: elevation, floodmap, topography, index, data, rgba
+        # if self.parameter not in ["elevation", "floodmap", "topography", "index", "data", "rgba"]:
+        #     raise ValueError(
+        #         "Parameter must be one of the following: elevation, floodmap, topography, index, data, rgba"
+        #     )
+
         self.read_metadata()
         # Check if available_tiles.nc exists. If not, just read the folders to get the zoom range.
         nc_file = os.path.join(self.path, "available_tiles.nc")
@@ -81,31 +119,6 @@ class TiledWebMap:
         else:
             self.download = False
 
-    def read_metadata(self):
-        # Read metadata file
-        tml_file = os.path.join(self.path, "metadata.tml")
-        if os.path.exists(tml_file):
-            tml = toml.load(tml_file)
-            for key in tml:
-                setattr(self, key, tml[key])
-
-    def read_availability(self):
-        # Read netcdf file with dimensions
-        nc_file = os.path.join(self.path, "available_tiles.nc")
-
-        with xr.open_dataset(nc_file) as ds:
-            self.zoom_levels = []
-            # Loop through zoom levels
-            for izoom in range(self.max_zoom + 1):
-                n = 2**izoom
-                iname = f"i_available_{izoom}"
-                jname = f"j_available_{izoom}"
-                iav = ds[iname].to_numpy()[:]
-                jav = ds[jname].to_numpy()[:]
-                zoom_level = ZoomLevel()
-                zoom_level.ntiles = n
-                zoom_level.ij_available = iav * n + jav
-                self.zoom_levels.append(zoom_level)
 
     def get_data(self, xl, yl, max_pixel_size, crs=None, waitbox=None):
         # xl and yl are in CRS 3857
@@ -222,77 +235,98 @@ class TiledWebMap:
 
         return x, y, z
 
-    def generate_topobathy_tiles(
-        self,
-        data_list,
-        bathymetry_database=None,
-        index_path=None,
-        lon_range=None,
-        lat_range=None,
-        zoom_range=None,
-        dx_max_zoom=None,
-        make_webviewer=True,
-        write_metadata=True,
-        make_availability_file=True,
-        make_lower_levels=True,
-        make_highest_level=True,
-        skip_existing=False,
-        parallel=True,
-        interpolation_method="linear",
-    ):
+    def make(self):
+        """"Make tiles."""
 
-        if zoom_range is None and index_path is None:
-            # Need to determine zoom range
-            if dx_max_zoom is None:
+        if self.zoom_range is None:
+            self.set_zoom_range()
+
+        if self.type == "data":  
+
+            if self.parameter == "elevation":
+                # Elevation tiles (default terrarium encoding)
+                # self.data is a list of dicts (for bathymetry database)
+                if self.make_highest_level:
+                    # Now loop through datasets in data_list (if zoom range is none and there is an index_path, it is set here)
+                    for idata, data_dict in enumerate(self.data):
+                        print(f"Processing {data_dict['name']} ... ({idata + 1} of {len(self.data)})")
+                        make_topobathy_tiles_top_level(
+                            self,
+                            data_dict,
+                        )
+                if self.make_lower_levels:
+                    make_topobathy_tiles_lower_levels(self)
+                # For anything but global datasets (that have every tile), make an availability file
+                if self.write_availability:
+                    self.write_availability_file()
+                if self.write_metadata:
+                    self.write_metadata_file()
+
+            elif self.parameter == "index" or self.parameter == "indices":
+                # Index tiles (int32 encoding)
+                # self.data is xugrid
+                make_index_tiles(self, topo_path=self.topo_path)
+
+            else:
+                # Other data tiles (default float32 encoding)
+                # self.data is 1D numpy array, index_path must be provided
+                make_data_tiles(self)
+
+        else:
+            # RGB tiles (self.parameter can be flood map, topography, or any other string)
+            # self.data is 1D numpy array, index_path must be provided
+            make_rgba_tiles(self)
+
+        if self.make_webviewer:
+            write_html(
+                os.path.join(self.path, "index.html"), max_native_zoom=self.zoom_range[1]
+            )
+
+    def read_metadata(self):
+        # Read metadata file
+        tml_file = os.path.join(self.path, "metadata.tml")
+        if os.path.exists(tml_file):
+            tml = toml.load(tml_file)
+            for key in tml:
+                setattr(self, key, tml[key])
+
+    def read_availability(self):
+        # Read netcdf file with dimensions
+        nc_file = os.path.join(self.path, "available_tiles.nc")
+
+        with xr.open_dataset(nc_file) as ds:
+            self.zoom_levels = []
+            # Loop through zoom levels
+            for izoom in range(self.max_zoom + 1):
+                n = 2**izoom
+                iname = f"i_available_{izoom}"
+                jname = f"j_available_{izoom}"
+                iav = ds[iname].to_numpy()[:]
+                jav = ds[jname].to_numpy()[:]
+                zoom_level = ZoomLevel()
+                zoom_level.ntiles = n
+                zoom_level.ij_available = iav * n + jav
+                self.zoom_levels.append(zoom_level)
+
+    def set_zoom_range(self):
+        if self.index_path is None:
+            # No index path either
+            if self.dx_max_zoom is None:
+                # And no dx_max_zoom!
                 # Need to determine dx_max_zoom from all the datasets
                 # Loop through datasets in datalist to determine dxmin in metres
-                dx_max_zoom = 3.0
-            else:
-                # Find appropriate zoom level
-                zoom_max = get_zoom_level_for_resolution(dx_max_zoom)
-            zoom_range = [0, zoom_max]    
-
-        if make_highest_level:
-
-            # Now loop through datasets in data_list 
-            for idata, data_dict in enumerate(data_list):
-                print(f"Processing {data_dict['name']} ... ({idata + 1} of {len(data_list)})")
-                make_topobathy_tiles_top_level(
-                    self,
-                    data_dict,
-                    bathymetry_database=bathymetry_database,
-                    index_path=index_path,
-                    lon_range=lon_range,
-                    lat_range=lat_range,
-                    zoom_range=zoom_range,
-                    skip_existing=skip_existing,
-                    parallel=parallel,
-                    interpolation_method=interpolation_method,
-                )
-
-        if make_lower_levels:
-            self.zoom_range = zoom_range
-            make_topobathy_tiles_lower_levels(
-                self, skip_existing=skip_existing, parallel=parallel
-            )
-
-        # For anything but global datasets, make an availability file
-        if make_availability_file:
-            self.make_availability_file()
-        if write_metadata:
-            self.write_metadata()
-        if make_webviewer:
-            write_html(
-                os.path.join(self.path, "index.html"), max_native_zoom=self.max_zoom
-            )
-
-    def generate_flood_map_tiles(self):
-        pass
-
-    def generate_index_tiles(self, grid, zoom_range, format="png", webviewer=True):
-        make_index_tiles(
-            grid, self.path, zoom_range=zoom_range, format=format, webviewer=webviewer
-        )
+                self.dx_max_zoom = 10.0
+            # Find appropriate zoom level
+            zoom_max = get_zoom_level_for_resolution(self.dx_max_zoom)
+        else:
+            # Index path is provided, so we can determine the max zoom from that
+            zoom_levels = list_folders(os.path.join(self.index_path, "*"), basename=True)
+            if zoom_levels:
+                # zoom_levels is a list of strings, convert to int and sort
+                zoom_levels = [int(z) for z in zoom_levels]
+                zoom_levels.sort()
+                zoom_max = zoom_levels[-1]
+        self.zoom_range = [0, zoom_max]
 
     def check_availability(self, i, j, izoom):
         # Check if tile exists at all
@@ -368,7 +402,7 @@ class TiledWebMap:
             print("An error occurred while uploading !")
         pass
 
-    def make_availability_file(self):
+    def write_availability_file(self):
         # Make availability file
         # Loop through zoom levels
         ds = xr.Dataset()
@@ -407,7 +441,7 @@ class TiledWebMap:
 
         ds.close()
 
-    def write_metadata(self):
+    def write_metadata_file(self):
         metadata = {}
 
         metadata["longname"] = self.long_name
@@ -452,3 +486,4 @@ class TiledWebMap:
         toml_file = os.path.join(self.path, "metadata.tml")
         with open(toml_file, "w") as f:
             toml.dump(metadata, f)
+

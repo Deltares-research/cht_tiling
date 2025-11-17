@@ -18,7 +18,7 @@ from pyproj import CRS, Transformer
 from scipy.interpolate import RegularGridInterpolator
 
 import cht_tiling.fileops as fo
-from cht_tiling.utils import deg2num, num2deg, png2elevation, png2int
+from cht_tiling.utils import deg2num, num2deg, png2elevation, elevation2png, png2int, int2png
 
 # class TileLayerTime:
 #     def __init__(self):
@@ -1310,29 +1310,29 @@ def num2deg_ur(xtile, ytile, zoom):
 # Note: we only use the RGB channels for this (and not the alpha channel)
 
 
-def png2elevation(png_file):
-    """Convert png to elevation array based on terrarium interpretation"""
-    img = Image.open(png_file)
-    rgb = np.array(img.convert("RGB"))
-    # Convert RGB values to elevation values
-    elevation = (rgb[:, :, 0] * 256 + rgb[:, :, 1] + rgb[:, :, 2] / 256) - 32768.0
-    # where val is less than -32767, set to NaN
-    elevation[elevation < -32767.0] = np.nan
-    return elevation
+# def png2elevation(png_file):
+#     """Convert png to elevation array based on terrarium interpretation"""
+#     img = Image.open(png_file)
+#     rgb = np.array(img.convert("RGB"))
+#     # Convert RGB values to elevation values
+#     elevation = (rgb[:, :, 0] * 256 + rgb[:, :, 1] + rgb[:, :, 2] / 256) - 32768.0
+#     # where val is less than -32767, set to NaN
+#     elevation[elevation < -32767.0] = np.nan
+#     return elevation
 
 
-def elevation2png(val, png_file):
-    """Convert elevation array to png using terrarium interpretation"""
-    rgb = np.zeros((256 * 256, 3), "uint8")
-    # r, g, b = elevation2rgb(val)
-    val += 32768.0
-    rgb[:, 0] = np.floor(val / 256).flatten()
-    rgb[:, 1] = np.floor(val % 256).flatten()
-    rgb[:, 2] = np.floor((val - np.floor(val)) * 256).flatten()
-    rgb = rgb.reshape([256, 256, 3])
-    # Create PIL Image from RGB values and save as PNG
-    img = Image.fromarray(rgb)
-    img.save(png_file)
+# def elevation2png(val, png_file):
+#     """Convert elevation array to png using terrarium interpretation"""
+#     rgb = np.zeros((256 * 256, 3), "uint8")
+#     # r, g, b = elevation2rgb(val)
+#     val += 32768.0
+#     rgb[:, 0] = np.floor(val / 256).flatten()
+#     rgb[:, 1] = np.floor(val % 256).flatten()
+#     rgb[:, 2] = np.floor((val - np.floor(val)) * 256).flatten()
+#     rgb = rgb.reshape([256, 256, 3])
+#     # Create PIL Image from RGB values and save as PNG
+#     img = Image.fromarray(rgb)
+#     img.save(png_file)
 
 
 # def elevation2rgb(val):
@@ -1372,21 +1372,21 @@ def elevation2png(val, png_file):
 #     )
 
 
-def int2png(val, png_file):
-    """Convert int array to png"""
-    # Convert index integers to RGBA values
-    rgba = np.zeros((256, 256, 4), "uint8")
-    r = (val // 256**3) % 256
-    g = (val // 256**2) % 256
-    b = (val // 256) % 256
-    a = val % 256
-    rgba[:, :, 0] = r.flatten()
-    rgba[:, :, 1] = g.flatten()
-    rgba[:, :, 2] = b.flatten()
-    rgba[:, :, 3] = a.flatten()
-    # Create PIL Image from RGB values and save as PNG
-    img = Image.fromarray(rgba)
-    img.save(png_file)
+# def int2png(val, png_file):
+#     """Convert int array to png"""
+#     # Convert index integers to RGBA values
+#     rgba = np.zeros((256, 256, 4), "uint8")
+#     r = (val // 256**3) % 256
+#     g = (val // 256**2) % 256
+#     b = (val // 256) % 256
+#     a = val % 256
+#     rgba[:, :, 0] = r.flatten()
+#     rgba[:, :, 1] = g.flatten()
+#     rgba[:, :, 2] = b.flatten()
+#     rgba[:, :, 3] = a.flatten()
+#     # Create PIL Image from RGB values and save as PNG
+#     img = Image.fromarray(rgba)
+#     img.save(png_file)
 
 
 # def int2rgba(int_val):

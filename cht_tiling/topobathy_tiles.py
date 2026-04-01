@@ -1,11 +1,12 @@
-import glob
+import logging
 import os
 import time
 from multiprocessing.pool import ThreadPool
 
+import geopandas as gpd
 import numpy as np
 from pyproj import CRS, Transformer
-from rasterio.transform import from_origin
+from shapely.geometry import box
 
 from cht_tiling.utils import (
     deg2num,
@@ -14,6 +15,8 @@ from cht_tiling.utils import (
     num2deg,
     png2elevation,
 )
+
+logger = logging.getLogger(__name__)
 
 # from cht_tiling.webviewer import write_html
 
@@ -98,8 +101,14 @@ def make_topobathy_tiles_top_level(twm, data_dict):
             iy1 = max(iy1, max(it_list))
     else:
         if lon_range is None or lat_range is None:
-            # Get the lon_range and lat_range from the data_dict (should add this functionality to bathymetry_database)
-            lon_range, lat_range = twm.bathymetry_database.get_lon_lat_range(data_dict["name"])
+            if twm.bathymetry_database is not None:
+                lon_range, lat_range = twm.bathymetry_database.get_lon_lat_range(
+                    data_dict["name"]
+                )
+            else:
+                # Without extent info, use the full world
+                lon_range = [-180.0, 180.0]
+                lat_range = [-85.0, 85.0]
 
         ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
         ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
@@ -122,6 +131,7 @@ def make_topobathy_tiles_top_level(twm, data_dict):
     options["interpolation_method"] = twm.interpolation_method
     options["z_range"] = twm.z_range
     options["bathymetry_database"] = twm.bathymetry_database
+    options["data_catalog"] = twm.data_catalog
     options["skip_existing"] = twm.skip_existing
 
     # Loop in x direction
@@ -313,119 +323,31 @@ def create_highest_zoom_level_tile(
     x3857 = xo + xv[:] + 0.5 * dxy
     y3857 = yo - yv[:] - 0.5 * dxy
 
+    data_catalog = options["data_catalog"]
     bathymetry_database = options["bathymetry_database"]
-    zg = bathymetry_database.get_bathymetry_on_grid(
-        x3857, y3857, CRS.from_epsg(3857), [data_dict]
-    )
 
-    # if data_type == "ddb":
-    #     pass
-    #     # zg = bathymetry_database.get_bathymetry_on_grid(
-    #     #     x3857, y3857, CRS.from_epsg(3857), dem_list
-    #     # )
-    # elif data_type == "twm":
-    #     png_file_name = os.path.join(options["twm_data"].path, str(izoom), str(i), str(j) + ".png")
-    #     if os.path.exists(png_file_name):
-    #         # Easy, the tile exists
-    #         zg = png2elevation(png_file_name, encoder=options["twm_data"].encoder)
-    #     else:
-    #         xl = [x3857[0,0], x3857[0,-1]]
-    #         yl = [y3857[-1,0], y3857[0,1]]
-    #         max_pixel_size = dxy
-    #         xd, yd, zd = options["twm_data"].get_data(xl, yl, max_pixel_size)
-    #         zg = interp2(xd, yd, zd, x3857, y3857, method=options["interpolation_method"])
-
-    # elif data_type == "xarray":
-    #     # Make grid of x3857 and y3857, and convert to crs of dataset
-    #     # xg, yg = np.meshgrid(x3857, y3857)
-    #     xg, yg = transformer_3857_to_crs.transform(x3857, y3857)
-    #     # Subtract xytrans
-    #     xg = xg - options["xytrans"][0]
-    #     yg = yg - options["xytrans"][1]
-    #     # Get min and max of xg, yg
-    #     xg_min = np.min(xg)
-    #     xg_max = np.max(xg)
-    #     yg_min = np.min(yg)
-    #     yg_max = np.max(yg)
-    #     # Add buffer to grid
-    #     dbuff = 0.05 * max(xg_max - xg_min, yg_max - yg_min)
-    #     xg_min = xg_min - dbuff
-    #     xg_max = xg_max + dbuff
-    #     yg_min = yg_min - dbuff
-    #     yg_max = yg_max + dbuff
-
-    #     # Get the indices of the dataset that are within the xg, yg range
-    #     i0 = np.where(da.x <= xg_min)[0]
-    #     if len(i0) == 0:
-    #         # Take first index
-    #         i0 = 0
-    #     else:
-    #         # Take last index
-    #         i0 = i0[-1]
-    #     i1 = np.where(da.x >= xg_max)[0]
-    #     if len(i1) == 0:
-    #         i1 = len(da.x) - 1
-    #     else:
-    #         i1 = i1[0]
-    #     if i1 <= i0 + 1:
-    #         # No data for this tile
-    #         return
-
-    #     xd = da.x[i0:i1]
-
-    #     if da.y[0] < da.y[-1]:
-    #         # South to North
-    #         j0 = np.where(da.y <= yg_min)[0]
-    #         if len(j0) == 0:
-    #             j0 = 0
-    #         else:
-    #             j0 = j0[-1]
-    #         j1 = np.where(da.y >= yg_max)[0]
-    #         if len(j1) == 0:
-    #             j1 = len(da.y) - 1
-    #         else:
-    #             j1 = j1[0]
-    #         if j1 <= j0 + 1:
-    #             # No data for this tile
-    #             return
-    #         # Get the dataset within the range
-    #         yd = da.y[j0:j1]
-    #         # Get number of dimensions of dataarray
-    #         if len(da.shape) == 2:
-    #             zd = da[j0:j1, i0:i1].to_numpy()[:]
-    #         else:
-    #             zd = np.squeeze(da[0, j0:j1, i0:i1].to_numpy()[:])
-    #     else:
-    #         # North to South
-    #         j0 = np.where(da.y <= yg_min)[0]
-    #         if len(j0) == 0:
-    #             # Use last index
-    #             j0 = len(da.y) - 1
-    #         else:
-    #             # Use first index
-    #             j0 = j0[0]
-    #         j1 = np.where(da.y >= yg_max)[0]
-    #         if len(j1) == 0:
-    #             j1 = 0
-    #         else:
-    #             j1 = j1[-1]
-    #         if j0 <= j1 + 1:
-    #             # No data for this tile
-    #             return
-    #         # Get the dataset within the range
-    #         yd = np.flip(da.y[j1:j0])
-    #         if len(da.shape) == 2:
-    #             zd = np.flip(
-    #                 da[j1:j0, i0:i1].to_numpy()[:], axis=0
-    #             )
-    #         else:
-    #             zd = np.squeeze(
-    #                 np.flip(
-    #                     da[0, j1:j0, i0:i1].to_numpy()[:], axis=0
-    #                 )
-    #             )
-
-    # zg = interp2(x3857, y3857, zd, xg, yg, method=options["interpolation_method"])
+    if data_catalog is not None:
+        # HydroMT data catalog path
+        xmin, xmax = float(x3857.min()), float(x3857.max())
+        ymin, ymax = float(y3857.min()), float(y3857.max())
+        geom = gpd.GeoDataFrame(
+            geometry=[box(xmin, ymin, xmax, ymax)], crs=3857
+        )
+        name = data_dict.get("elevation", data_dict.get("name"))
+        try:
+            da = data_catalog.get_rasterdataset(
+                name, geom=geom, zoom=(dxy, "metre")
+            )
+            zg = da.values.astype(np.float64)
+        except Exception:
+            zg = np.full((len(y3857), len(x3857)), np.nan)
+    elif bathymetry_database is not None:
+        # Legacy cht_bathymetry path
+        zg = bathymetry_database.get_bathymetry_on_grid(
+            x3857, y3857, CRS.from_epsg(3857), [data_dict]
+        )
+    else:
+        zg = np.full(x3857.shape, np.nan)
 
     # Any value below zmin is set NaN
     zg[np.where(zg < z_range[0])] = np.nan

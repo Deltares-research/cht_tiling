@@ -70,6 +70,7 @@ class TiledWebMap:
                  zbmax=0.0,
                  minimum_depth=0.05,
                  bathymetry_database=None,
+                 data_catalog=None,
                  lon_range=None,
                  lat_range=None,
                  z_range=[-999999.0, 999999.0],

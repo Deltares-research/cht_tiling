@@ -797,11 +797,11 @@ def make_flood_map_tiles(
         Water level values (1-D array indexed by cell index, or a list
         of CDF interpolators for probabilistic mode).
     index_path : str
-        Directory containing index tile PNGs.
+        Directory containing index tile PNG files.
     png_path : str
         Output directory for the generated flood map tiles.
     topo_path : str
-        Directory containing topobathy tile PNGs.
+        Directory containing topobathy tile PNG files.
     option : str
         Tile generation mode: ``"deterministic"`` or ``"probabilistic"``.
     zoom_range : list[int] | None
@@ -1040,9 +1040,9 @@ def make_flood_map_overlay_v2(
     valg : np.ndarray
         Water level values (1-D array or DataArray).
     index_path : str
-        Directory containing index tile PNGs.
+        Directory containing index tile PNG files.
     topo_path : str
-        Directory containing topobathy tile PNGs.
+        Directory containing topobathy tile PNG files.
     zmax_minus_zmin : np.ndarray | None
         Per-cell elevation range for slope filtering.
     mean_depth : np.ndarray | None

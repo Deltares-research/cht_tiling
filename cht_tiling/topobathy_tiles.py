@@ -101,14 +101,9 @@ def make_topobathy_tiles_top_level(twm, data_dict):
             iy1 = max(iy1, max(it_list))
     else:
         if lon_range is None or lat_range is None:
-            if twm.bathymetry_database is not None:
-                lon_range, lat_range = twm.bathymetry_database.get_lon_lat_range(
-                    data_dict["name"]
-                )
-            else:
-                # Without extent info, use the full world
-                lon_range = [-180.0, 180.0]
-                lat_range = [-85.0, 85.0]
+            # Without extent info, use the full world
+            lon_range = [-180.0, 180.0]
+            lat_range = [-85.0, 85.0]
 
         ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
         ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
@@ -130,7 +125,6 @@ def make_topobathy_tiles_top_level(twm, data_dict):
     options["dxy"] = dxy
     options["interpolation_method"] = twm.interpolation_method
     options["z_range"] = twm.z_range
-    options["bathymetry_database"] = twm.bathymetry_database
     options["data_catalog"] = twm.data_catalog
     options["skip_existing"] = twm.skip_existing
 
@@ -324,7 +318,6 @@ def create_highest_zoom_level_tile(
     y3857 = yo - yv[:] - 0.5 * dxy
 
     data_catalog = options["data_catalog"]
-    bathymetry_database = options["bathymetry_database"]
 
     if data_catalog is not None:
         # HydroMT data catalog path
@@ -341,11 +334,6 @@ def create_highest_zoom_level_tile(
             zg = da.values.astype(np.float64)
         except Exception:
             zg = np.full((len(y3857), len(x3857)), np.nan)
-    elif bathymetry_database is not None:
-        # Legacy cht_bathymetry path
-        zg = bathymetry_database.get_bathymetry_on_grid(
-            x3857, y3857, CRS.from_epsg(3857), [data_dict]
-        )
     else:
         zg = np.full(x3857.shape, np.nan)
 

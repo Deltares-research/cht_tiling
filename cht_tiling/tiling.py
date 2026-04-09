@@ -1067,35 +1067,47 @@ def make_topobathy_tiles(
     dem_names,
     lon_range,
     lat_range,
+    data_catalog=None,
+    data_catalog_path=None,
     index_path=None,
     zoom_range=None,
     z_range=None,
-    bathymetry_database_path="d:\\delftdashboard\\data\\bathymetry",
     quiet=False,
 ):
     """
-    Generates topo/bathy tiles
+    Generates topo/bathy tiles using a HydroMT data catalog.
 
     :param path: Path where topo/bathy tiles will be stored.
     :type path: str
-    :param dem_name: List of DEM names (dataset names in Bathymetry Database).
-    :type dem_name: list
-    :param png_path: Output path where the png tiles will be created.
-    :type png_path: str
-    :param option: Option.
-    :type option: str
-    :param zoom_range: Zoom range for which the png tiles
-    will be created. Defaults to [0, 23].
+    :param dem_names: List of DEM names (dataset names in the data catalog).
+    :type dem_names: list of str
+    :param lon_range: Longitude range [min, max].
+    :type lon_range: list of float
+    :param lat_range: Latitude range [min, max].
+    :type lat_range: list of float
+    :param data_catalog: HydroMT DataCatalog instance. If None, one is created
+        from *data_catalog_path*.
+    :type data_catalog: hydromt.DataCatalog or None
+    :param data_catalog_path: Path to a HydroMT data catalog YAML file.
+        Used only when *data_catalog* is None.
+    :type data_catalog_path: str or None
+    :param index_path: Optional path with index tiles to limit processing.
+    :type index_path: str or None
+    :param zoom_range: Zoom range [min, max]. Defaults to [0, 13].
     :type zoom_range: list of int
-
+    :param z_range: Elevation range [min, max]. Defaults to [-20000, 20000].
+    :type z_range: list of float
+    :param quiet: Suppress progress messages.
+    :type quiet: bool
     """
+    import geopandas as gpd
+    from shapely.geometry import box
 
-    from cht_bathymetry.bathymetry_database import BathymetryDatabase
-
-    # from cht_utils.misc_tools import interp2
-
-    bathymetry_database = BathymetryDatabase(None)
-    bathymetry_database.initialize(bathymetry_database_path)
+    if data_catalog is None:
+        from hydromt import DataCatalog
+        if data_catalog_path is None:
+            raise ValueError("Either data_catalog or data_catalog_path must be provided.")
+        data_catalog = DataCatalog(data_catalog_path)
 
     if not zoom_range:
         zoom_range = [0, 13]
@@ -1108,14 +1120,6 @@ def make_topobathy_tiles(
     transformer_4326_to_3857 = Transformer.from_crs(
         CRS.from_epsg(4326), CRS.from_epsg(3857), always_xy=True
     )
-
-    dem_list = []
-    for dem_name in dem_names:
-        dem = {}
-        dem["dataset"] = bathymetry_database.get_dataset(dem_name)
-        dem["zmin"] = -10000.0
-        dem["zmax"] = 10000.0
-        dem_list.append(dem)
 
     # Loop through zoom levels
     for izoom in range(zoom_range[0], zoom_range[1] + 1):
@@ -1159,17 +1163,32 @@ def make_topobathy_tiles(
                 x3857 = xo + xv[:] + 0.5 * dxy
                 y3857 = yo - yv[:] - 0.5 * dxy
 
-                # Get bathymetry on subgrid from bathymetry database
-                zg = bathymetry_database.get_bathymetry_on_grid(
-                    x3857, y3857, CRS.from_epsg(3857), dem_list
+                # Get elevation from data catalog
+                xmin, xmax = float(x3857.min()), float(x3857.max())
+                ymin, ymax = float(y3857.min()), float(y3857.max())
+                geom = gpd.GeoDataFrame(
+                    geometry=[box(xmin, ymin, xmax, ymax)], crs=3857
                 )
 
+                zg = np.full(x3857.shape, np.nan)
+                for dem_name in dem_names:
+                    try:
+                        da = data_catalog.get_rasterdataset(
+                            dem_name, geom=geom, zoom=(dxy, "metre")
+                        )
+                        zg0 = da.values.astype(np.float64)
+                        # Fill NaNs with data from this DEM
+                        mask = np.isnan(zg) & np.isfinite(zg0)
+                        zg[mask] = zg0[mask]
+                    except Exception:
+                        continue
+                    if not np.isnan(zg).any():
+                        break  # No NaNs left
+
                 if np.isnan(zg).all():
-                    # only nans in this tile
                     continue
 
                 if np.nanmax(zg) < z_range[0] or np.nanmin(zg) > z_range[1]:
-                    # all values in tile outside z_range
                     continue
 
                 if not path_okay:
@@ -1179,42 +1198,6 @@ def make_topobathy_tiles(
 
                 # Write to terrarium png format
                 elevation2png(zg, file_name)
-
-
-def get_bathy_on_tile(
-    x3857, y3857, dem_names, dem_crs, transformers, dxy, bathymetry_database
-):
-    npix = 256
-    zg = np.float32(np.full([npix, npix], np.nan))
-
-    for idem, dem_name in enumerate(dem_names):
-        # Convert tile grid to crs of DEM
-        xg, yg = transformers[idem].transform(x3857, y3857)
-
-        # Bounding box of tile grid
-        if dem_crs[idem].is_geographic:
-            xybuf = dxy / 50000.0
-        else:
-            xybuf = 2 * dxy
-
-        xl = [np.min(np.min(xg)) - xybuf, np.max(np.max(xg)) + xybuf]
-        yl = [np.min(np.min(yg)) - xybuf, np.max(np.max(yg)) + xybuf]
-
-        # Get DEM data (ddb format for now)
-        x, y, z = bathymetry_database.get_data(dem_name, xl, yl, max_cell_size=dxy)
-
-        if x is np.nan:
-            # No data obtained from bathymetry database
-            continue
-
-        zg0 = np.float32(interp2(x, y, z, xg, yg))
-        zg[np.isnan(zg)] = zg0[np.isnan(zg)]
-
-        if not np.isnan(zg).any():
-            # No nans left, so no need to load subsequent DEMs
-            break
-
-    return zg
 
 
 #### Index to degree (and vice versa) functions

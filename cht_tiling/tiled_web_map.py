@@ -69,7 +69,6 @@ class TiledWebMap:
                  caxis=None,
                  zbmax=0.0,
                  minimum_depth=0.05,
-                 bathymetry_database=None,
                  data_catalog=None,
                  lon_range=None,
                  lat_range=None,
@@ -386,7 +385,7 @@ class TiledWebMap:
         parallel=True,
         quiet=True,
     ):
-        from cht_utils.s3 import S3Session
+        from cht_utils.remote.s3 import S3Session
 
         # Upload to S3
         try:

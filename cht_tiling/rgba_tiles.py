@@ -1,32 +1,39 @@
+"""Generate RGBA web tiles from model output data using index tile lookups.
+
+Supports flood maps, water level maps, topography, and direct value rendering
+with either discrete color ranges or continuous colormap scaling.
+"""
+
 import os
-from PIL import Image
-from matplotlib import cm
+
 import numpy as np
+from matplotlib import cm
+from PIL import Image
 
-from cht_tiling.utils import makedir, list_folders, list_files, png2int, png2elevation
+from cht_tiling.utils import list_files, list_folders, makedir, png2elevation, png2int
 
-def make_rgba_tiles(twm):
 
+def make_rgba_tiles(twm: object) -> None:
+    """Generate RGBA PNG tiles for a tiled web map.
+
+    Reads index tiles to map model cell indices onto tile pixels, then
+    applies the appropriate coloring based on the parameter type (flood map,
+    water level, topography, or direct values).
+
+    Parameters
+    ----------
+    twm : object
+        A ``TiledWebMap`` instance with at least the following attributes:
+        ``index_path``, ``path``, ``data``, ``parameter``, ``topo_path``,
+        ``zoom_range``, ``caxis``, ``color_values``, ``zbmax``,
+        ``minimum_depth``, ``merge``, ``quiet``.
+
+    Raises
+    ------
+    ValueError
+        If ``index_path`` is not set, or if ``topo_path`` is missing when
+        required by the selected parameter.
     """
-    Generates RGBA web tiles
-
-    :param valg: Name of the scenario to be run.
-    :type valg: array
-    :param index_path: Path where the index tiles are sitting.
-    :type index_path: str
-    :param option: Option to define the type of tiles to be generated.
-    # Options are
-    # 'direct', 'floodmap', 'topography'. Defaults to 'direct',
-    # in which case the values
-    # in *valg* are used directly.
-    :type option: str
-    :param zoom_range: Zoom range for
-    which the png tiles will be created.
-    Defaults to [0, 23].
-    :type zoom_range: list of int
-
-    """
-
     # index path MUST be provided
     if twm.index_path is None:
         raise ValueError("index_path must be provided for data tiles")
@@ -46,11 +53,20 @@ def make_rgba_tiles(twm):
         if twm.topo_path is None:
             raise ValueError("topo_path must be provided for water level tiles")
         option = "water_level"
-    elif twm.parameter == "flood_probability_map" or twm.parameter == "flood probability map":
+    elif (
+        twm.parameter == "flood_probability_map"
+        or twm.parameter == "flood probability map"
+    ):
         if twm.topo_path is None:
-            raise ValueError("topo_path must be provided for flood probability map tiles")
+            raise ValueError(
+                "topo_path must be provided for flood probability map tiles"
+            )
         option = "flood_probability_map"
-    elif twm.parameter == "topography" or twm.parameter == "topo" or twm.parameter == "elevation":
+    elif (
+        twm.parameter == "topography"
+        or twm.parameter == "topo"
+        or twm.parameter == "elevation"
+    ):
         if twm.topo_path is None:
             raise ValueError("topo_path must be provided for topography tiles")
         option = "topography"
@@ -72,9 +88,8 @@ def make_rgba_tiles(twm):
         caxis.append(np.nanmax(valg))
 
     for izoom in range(twm.zoom_range[0], twm.zoom_range[1] + 1):
-
         if not twm.quiet:
-            print("Processing zoom level " + str(izoom))
+            print(f"Processing zoom level {izoom}")
 
         index_zoom_path = os.path.join(twm.index_path, str(izoom))
 
@@ -95,7 +110,7 @@ def make_rgba_tiles(twm):
                 j = int(jfile[:-4])
 
                 index_file = os.path.join(index_zoom_path_i, jfile)
-                png_file = os.path.join(png_zoom_path_i, str(j) + ".png")
+                png_file = os.path.join(png_zoom_path_i, f"{j}.png")
 
                 ind = png2int(index_file, -1)
 
@@ -104,25 +119,11 @@ def make_rgba_tiles(twm):
                     # probability of water level
                     pass
 
-                    # # Read bathy
-                    # bathy_file = os.path.join(
-                    #     twm.topo_path, str(izoom), ifolder, str(j) + ".png"
-                    # )
-                    # if not os.path.exists(bathy_file):
-                    #     # No bathy for this tile, continue
-                    #     continue
-                    # zb = np.fromfile(bathy_file, dtype="f4")
-                    # zs = zb + depth
-
-                    # valt = valg[ind](zs)
-                    # valt[ind < 0] = np.nan
-
                 elif option == "water_level":
                     bathy_file = os.path.join(
-                        twm.topo_path, str(izoom), ifolder, str(j) + ".png"
+                        twm.topo_path, str(izoom), ifolder, f"{j}.png"
                     )
                     if not os.path.exists(bathy_file):
-                        # No bathy for this tile, continue
                         continue
                     zb = png2elevation(bathy_file)
                     # Create water level map
@@ -132,10 +133,9 @@ def make_rgba_tiles(twm):
 
                 elif option == "floodmap":
                     bathy_file = os.path.join(
-                        twm.topo_path, str(izoom), ifolder, str(j) + ".png"
+                        twm.topo_path, str(izoom), ifolder, f"{j}.png"
                     )
                     if not os.path.exists(bathy_file):
-                        # No bathy for this tile, continue
                         continue
                     zb = png2elevation(bathy_file)
                     valt = valg[ind]
@@ -145,20 +145,18 @@ def make_rgba_tiles(twm):
 
                 elif option == "topography":
                     bathy_file = os.path.join(
-                        twm.topo_path, str(izoom), ifolder, str(j) + ".png"
+                        twm.topo_path, str(izoom), ifolder, f"{j}.png"
                     )
                     if not os.path.exists(bathy_file):
-                        # No bathy for this tile, continue
                         continue
                     zb = png2elevation(bathy_file)
                     valt = zb
 
-                else: # must be "direct"
+                else:  # must be "direct"
                     valt = valg[ind]
                     valt[ind < 0] = np.nan
 
                 if twm.color_values:
-
                     valt = valt.flatten()
 
                     rgb = np.zeros((256 * 256, 4), "uint8")
@@ -202,5 +200,3 @@ def make_rgba_tiles(twm):
                         im = Image.fromarray(rgb)
 
                 im.save(png_file)
-
-    

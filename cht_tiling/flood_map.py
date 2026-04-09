@@ -1,6 +1,14 @@
+"""Flood map generation from water level data, topobathy, and index rasters.
+
+Provides the FloodMap class for computing flood depth from water levels and
+topography, writing output as GeoTIFF or NetCDF, creating map overlays, and
+plotting. Also includes legacy tile-based flood map generation functions and
+shared utilities for overview level selection, RGB conversion, and bounding
+box reprojection.
+"""
+
 import os
 from pathlib import Path
-from typing import Union
 
 import contextily as ctx
 import matplotlib.pyplot as plt
@@ -20,50 +28,54 @@ from cht_tiling.utils import deg2num, num2deg, png2elevation, png2int
 
 
 class FloodMap:
+    """Compute and visualise flood depth maps from water level and topobathy data.
+
+    Uses Cloud Optimized GeoTIFF (COG) files for topography and cell
+    indices, and combines them with water level arrays to produce flood
+    depth grids. Supports writing output as GeoTIFF/NetCDF, creating
+    PNG map overlays, and matplotlib plotting.
+
+    Parameters
+    ----------
+    topobathy_file : str | Path | None
+        Path to the topobathy COG file.
+    index_file : str | Path | None
+        Path to the cell-index COG file.
+    zbmin : float
+        Minimum allowable topobathy value; below this is masked.
+    zbmax : float
+        Maximum allowable topobathy value; above this is masked.
+    hmin : float
+        Minimum water depth threshold; shallower areas are masked.
+    max_pixel_size : float
+        Maximum pixel size for overview level selection.
+    data_array_name : str
+        Name of the depth variable in the output dataset.
+    cmap : str | None
+        Matplotlib colormap name.
+    cmin : float | None
+        Minimum value for colormap normalization.
+    cmax : float | None
+        Maximum value for colormap normalization.
+    color_values : list[dict] | None
+        Discrete color definitions with ``lower_value``, ``upper_value``,
+        and ``color``/``rgb`` keys.
+    """
+
     def __init__(
         self,
-        topobathy_file: Union[str, Path] = None,
-        index_file: Union[str, Path] = None,
+        topobathy_file: str | Path | None = None,
+        index_file: str | Path | None = None,
         zbmin: float = 0.0,
         zbmax: float = 99999.9,
         hmin: float = 0.1,
         max_pixel_size: float = 0.0,
         data_array_name: str = "water_depth",
-        cmap: str = None,
-        cmin: float = None,
-        cmax: float = None,
-        color_values: list = None,
-    ):
-        """
-        Initialize the FloodMap class with optional parameters.
-
-        Parameters:
-        ----------
-        topobathy_file : Union[str, Path], optional
-        Topobathy data file (COG).
-        index_file : Union[str, Path], optional
-        Indices data file (COG).
-        zbmin : float, optional
-        Minimum allowable topobathy value.
-        zbmax : float, optional
-        Maximum allowable topobathy value.
-        hmin : float, optional
-        Minimum allowable water depth.
-        max_pixel_size : float, optional
-        Maximum pixel size for the appropriate overview level.
-        data_array_name : str, optional
-        Name of the data array in the output dataset.
-        cmap : str, optional
-        Colormap to use.
-        cmin : float, optional
-        Minimum value for colormap normalization.
-        cmax : float, optional
-        Maximum value for colormap normalization.
-        """
-        # self.topobathy_file = topobathy_file
-        # self.index_file = index_file
-        # self.zb = rasterio.open(self.topobathy_file)
-        # self.indices = rasterio.open(self.index_file)
+        cmap: str | None = None,
+        cmin: float | None = None,
+        cmax: float | None = None,
+        color_values: list[dict] | None = None,
+    ) -> None:
         self.topobathy_file = None
         self.index_file = None
         self.zb = None
@@ -83,7 +95,6 @@ class FloodMap:
         self.legend = {}
         self.legend["title"] = "Flood Depth (m)"
         self.legend["contour"] = []
-        # Set default
         self.legend["contour"].append(
             {"color": "#FF0000", "lower_value": 2.0, "text": "2.0+ m"}
         )
@@ -92,7 +103,7 @@ class FloodMap:
                 "color": "#FFA500",
                 "lower_value": 1.0,
                 "upper_value": 2.0,
-                "text": "1.0–2.0 m",
+                "text": "1.0--2.0 m",
             }
         )
         self.legend["contour"].append(
@@ -100,7 +111,7 @@ class FloodMap:
                 "color": "#FFFF00",
                 "lower_value": 0.3,
                 "upper_value": 1.0,
-                "text": "0.3–1.0 m",
+                "text": "0.3--1.0 m",
             }
         )
         self.legend["contour"].append(
@@ -108,123 +119,105 @@ class FloodMap:
                 "color": "#00FF00",
                 "lower_value": 0.1,
                 "upper_value": 0.3,
-                "text": "0.1–0.3 m",
+                "text": "0.1--0.3 m",
             }
         )
 
-    def set_topobathy_file(self, topobathy_file: Union[str, Path]) -> None:
-        """
-        Set the topobathy file.
+    def set_topobathy_file(self, topobathy_file: str | Path) -> None:
+        """Set the topobathy file and open it with rasterio.
 
-        Parameters:
+        Parameters
         ----------
-        topobathy_file : Union[str, Path]
-            Topobathy data file (COG).
+        topobathy_file : str | Path
+            Path to the topobathy COG file.
         """
         self.topobathy_file = topobathy_file
         self.zb = rasterio.open(self.topobathy_file)
 
-    def set_index_file(self, index_file: Union[str, Path]) -> None:
-        """
-        Set the index file.
+    def set_index_file(self, index_file: str | Path) -> None:
+        """Set the index file and open it with rasterio.
 
-        Parameters:
+        Parameters
         ----------
-        index_file : Union[str, Path]
-            Indices data file (COG).
+        index_file : str | Path
+            Path to the cell-index COG file.
         """
         self.index_file = index_file
         self.indices = rasterio.open(self.index_file)
 
     def close(self) -> None:
-        """
-        Close the topobathy and index files.
-        """
+        """Close the topobathy, index, and dataset file handles."""
         if self.zb is not None:
             self.zb.close()
         if self.indices is not None:
             self.indices.close()
         self.ds.close()
 
-    def read(self, tiffile) -> None:
-        """
-        Read geotiff file with flood depth data.
+    def read(self, tiffile: str | Path) -> None:
+        """Read a GeoTIFF file with pre-computed flood depth data.
+
+        Parameters
+        ----------
+        tiffile : str | Path
+            Path to the GeoTIFF file.
         """
         self.ds = xr.Dataset()
         self.ds["water_depth"] = rioxarray.open_rasterio(tiffile, masked=True).squeeze()
 
-    def set_water_level(self, zs: Union[float, np.ndarray]) -> None:
-        """
-        Set the water level data.
+    def set_water_level(self, zs: float | np.ndarray) -> None:
+        """Set the water level data used for flood depth computation.
 
-        Parameters:
+        Parameters
         ----------
-        zs : np.ndarray
-            A 1D numpy array containing water level data for each index.
+        zs : float | np.ndarray
+            A scalar or 1-D array of water levels indexed by cell index.
         """
         self.zs = zs
 
     def make(
         self,
         max_pixel_size: float = 0.0,
-        bbox=None,
+        bbox: tuple[float, float, float, float] | None = None,
     ) -> xr.Dataset:
-        """
-        Generate a flood map geotiff (COG) or netCDF file from water level data, topobathy data, and indices.
+        """Compute flood depth from water levels, topobathy, and cell indices.
 
-        Parameters:
+        Reads topobathy and index COGs at the appropriate overview level,
+        computes ``h = zs[index] - zb``, and masks areas that are too
+        shallow or outside elevation bounds.
+
+        Parameters
         ----------
-        output_file : str
-            Path to the output file. The file extension determines the format (e.g., ".tif" for GeoTIFF, ".nc" for netCDF).
-        zbmin : float, optional
-            Minimum allowable topobathy value. Values below this will be masked. Default is 0.0.
-        zbmax : float, optional
-            Maximum allowable topobathy value. Values above this will be masked. Default is 99999.9.
-        hmin : float, optional
-            Minimum allowable water depth. Values below this will be masked. Default is 0.1.
-        max_pixel_size : float, optional
-            Maximum pixel size for the appropriate overview level. If 0.0, no overviews are used. Default is 0.0.
-        data_array_name : str, optional
-            Name of the data array in the output dataset. Default is "water_depth".
+        max_pixel_size : float
+            Maximum pixel size in metres for overview selection. If 0.0,
+            the native resolution is used.
+        bbox : tuple[float, float, float, float] | None
+            Bounding box ``(minx, miny, maxx, maxy)`` to clip the data.
 
-        Returns:
+        Returns
         -------
         xr.Dataset
-            An xarray Dataset containing the computed flood map.
-
-        Notes:
-        -----
-        - The function reads and processes topobathy and indices data, applies masks based on the provided thresholds,
-        and computes water depth.
-        - The output file can be saved as a GeoTIFF or netCDF file depending on the file extension.
+            Dataset containing the computed flood depth array.
         """
-
-        # First get the overview level (assuming zb is a string or path)
         overview_level = 0
 
         if max_pixel_size > 0.0:
             overview_level = get_appropriate_overview_level(self.zb, max_pixel_size)
 
-        # Read the data at the specified overview level
         if overview_level == 0:
             zb = rioxarray.open_rasterio(self.zb)
         else:
             zb = rioxarray.open_rasterio(self.zb, overview_level=overview_level)
-        # Remove band dimension if it is 1, and squeeze the array to 2D
         if "band" in zb.dims and zb.sizes["band"] == 1:
             zb = zb.squeeze(dim="band", drop=True)
         if bbox is not None:
             zb = zb.rio.clip_box(minx=bbox[0], miny=bbox[1], maxx=bbox[2], maxy=bbox[3])
 
-        # Read the data at the specified overview level
         if overview_level == 0:
             indices = rioxarray.open_rasterio(self.indices)
         else:
-            # Read the data at the specified overview level
             indices = rioxarray.open_rasterio(
                 self.indices, overview_level=overview_level
             )
-        # Remove band dimension if it is 1, and squeeze the array to 2D
         if "band" in indices.dims and indices.sizes["band"] == 1:
             indices = indices.squeeze(dim="band", drop=True)
         if bbox is not None:
@@ -232,69 +225,42 @@ class FloodMap:
                 minx=bbox[0], miny=bbox[1], maxx=bbox[2], maxy=bbox[3]
             )
 
-        # Get the no_data value from the indices array
         nan_val_indices = indices.attrs["_FillValue"]
-        # Set the no_data mask
         no_data_mask = indices == nan_val_indices
-        # Turn indices into numpy array and set no_data values to 0
         indices = np.squeeze(indices.to_numpy()[:])
         indices[np.where(indices == nan_val_indices)] = 0
 
-        # Compute water depth
         if isinstance(self.zs, float):
-            # If zs is a float, use constant water level
             h = np.full(zb.shape, self.zs) - zb.to_numpy()[:]
         else:
             h = self.zs[indices] - zb.to_numpy()[:]
-        # Set water depth to NaN where indices are no data
         h[no_data_mask] = np.nan
-        # Set water depth to NaN where it is less than hmin
         h[h < self.hmin] = np.nan
-        # Set water depth to NaN where zb is less than zbmin
         h[zb.to_numpy()[:] < self.zbmin] = np.nan
-        # Set water depth to NaN where zb is greater than zbmax
         h[zb.to_numpy()[:] > self.zbmax] = np.nan
 
-        # Turn h into a DataArray with the same dimensions as zb
         self.ds = xr.Dataset()
         self.ds[self.data_array_name] = xr.DataArray(
             h, dims=["y", "x"], coords={"y": zb.y, "x": zb.x}
         )
-        # Use same spatial_ref as zb
         self.ds[self.data_array_name] = self.ds[self.data_array_name].rio.write_crs(
             zb.rio.crs, inplace=True
         )
 
-    def write(
-        self,
-        output_file: Union[str, Path] = "",
-    ) -> None:
-        """
-        Write the flood map to a file.
+    def write(self, output_file: str | Path = "") -> None:
+        """Write the flood map to a GeoTIFF or NetCDF file.
 
-        Parameters:
+        Parameters
         ----------
-        output_file : Union[str, Path]
-            Path to the output file. The file extension determines the format (e.g., ".tif" for GeoTIFF, ".nc" for netCDF).
-
-        Returns:
-        -------
-        None
-
-        Notes:
-        -----
-        - If the output file is a NetCDF file (".nc"), the dataset is written directly without applying a colormap.
-        - If the output file is a GeoTIFF (".tif") and a colormap is provided, the data is normalized and the colormap is applied.
-        - If no colormap is provided for a GeoTIFF, the raw data is written as a binary raster.
+        output_file : str | Path
+            Output file path. Extension determines format: ``".tif"`` for
+            COG GeoTIFF, ``".nc"`` for NetCDF.
         """
         if output_file.endswith(".nc"):
-            # Write to netcdf
             self.ds.to_netcdf(output_file)
 
         elif output_file.endswith(".tif"):
-            # Write to geotiff
             if self.cmap is not None:
-                # Get RBG data array
                 rgb_da = get_rgb_data_array(
                     self.ds[self.data_array_name],
                     color_values=self.color_values,
@@ -303,49 +269,63 @@ class FloodMap:
                     cmax=self.cmax,
                 )
 
-                # Write to file
                 rgb_da.rio.to_raster(
                     output_file,
                     driver="COG",
-                    compress="deflate",  # or "lzw"
-                    blocksize=512,  # optional tuning
-                    overview_resampling="nearest",  # controls how overviews are built
+                    compress="deflate",
+                    blocksize=512,
+                    overview_resampling="nearest",
                 )
 
             else:
-                # Just write binary data
                 self.ds[self.data_array_name].rio.to_raster(
                     output_file,
                     driver="COG",
-                    compress="deflate",  # or "lzw"
-                    blocksize=512,  # optional tuning
-                    overview_resampling="nearest",  # controls how overviews are built
+                    compress="deflate",
+                    blocksize=512,
+                    overview_resampling="nearest",
                 )
 
-    def map_overlay(self, file_name, xlim=None, ylim=None, width=800):
-        """
-        Create a map overlay of the flood map using the specified colormap and save it to a png file. The CRS is 3857.
-        """
+    def map_overlay(
+        self,
+        file_name: str,
+        xlim: list[float] | None = None,
+        ylim: list[float] | None = None,
+        width: int = 800,
+    ) -> bool:
+        """Create a PNG map overlay of the flood map in EPSG:3857.
 
+        Parameters
+        ----------
+        file_name : str
+            Output PNG file path.
+        xlim : list[float] | None
+            Longitude extent ``[lon_min, lon_max]``.
+        ylim : list[float] | None
+            Latitude extent ``[lat_min, lat_max]``.
+        width : int
+            Width in pixels for resolution calculation.
+
+        Returns
+        -------
+        bool
+            True on success, False on failure.
+        """
         if self.ds is None:
             return
 
         try:
-            # Get the bounds of the data
             lon_min = xlim[0]
             lat_min = ylim[0]
             lon_max = xlim[1]
             lat_max = ylim[1]
 
-            # Get the bounds of the data in EPSG:3857
             transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
             x_min, y_min = transformer.transform(lon_min, lat_min)
             x_max, y_max = transformer.transform(lon_max, lat_max)
 
-            # Get required pixel size
             dxy = (x_max - x_min) / width
 
-            # Get bbox in local crs from xlim and ylim
             bbox = reproject_bbox(
                 lon_min,
                 lat_min,
@@ -356,7 +336,6 @@ class FloodMap:
                 buffer=0.05,
             )
 
-            # Compute water depth and store in self.ds
             self.make(max_pixel_size=dxy, bbox=bbox)
 
             rgb_da = get_rgb_data_array(
@@ -368,27 +347,21 @@ class FloodMap:
                 color_values=self.color_values,
             )
 
-            # Now reproject to EPSG:3857 and create a png file
             rgb_3857 = rgb_da.rio.reproject(
                 "EPSG:3857", resampling=Resampling.bilinear, nodata=0
-            )  # can also use nearest
+            )
 
-            # Apply padding
             rgb_3857 = rgb_3857.rio.pad_box(
                 minx=x_min, miny=y_min, maxx=x_max, maxy=y_max, constant_values=0
             )
 
-            # Final clip to exact bbox
             rgb_crop = rgb_3857.rio.clip_box(
                 minx=x_min, miny=y_min, maxx=x_max, maxy=y_max
             )
 
-            # Convert to numpy array and transpose to (y, x, band)
             rgba = rgb_crop.transpose("y", "x", "band").to_numpy().astype("uint8")
 
             plt.imsave(file_name, rgba)
-
-            # Need to set the legend dict (used in Guitares map layer)
 
             if self.discrete_colors:
                 self.legend = {}
@@ -396,7 +369,6 @@ class FloodMap:
                 self.legend["contour"] = []
 
                 if isinstance(self.color_values, str):
-                    # Use default
                     color_values = []
                     color_values.append(
                         {"color": "lightgreen", "lower_value": 0.1, "upper_value": 0.3}
@@ -409,7 +381,7 @@ class FloodMap:
                     )
                     color_values.append({"color": "red", "lower_value": 2.0})
                 else:
-                    color_values = self.color_values    
+                    color_values = self.color_values
 
                 for cv in color_values:
                     legend_item = {}
@@ -417,7 +389,9 @@ class FloodMap:
                     if "upper_value" in cv and "lower_value" in cv:
                         legend_item["lower_value"] = cv["lower_value"]
                         legend_item["upper_value"] = cv["upper_value"]
-                        legend_item["text"] = f"{cv['lower_value']}–{cv['upper_value']} m"
+                        legend_item["text"] = (
+                            f"{cv['lower_value']}--{cv['upper_value']} m"
+                        )
                     elif "upper_value" in cv:
                         legend_item["upper_value"] = cv["upper_value"]
                         legend_item["text"] = f"{cv['lower_value']}- m"
@@ -440,62 +414,60 @@ class FloodMap:
 
     def plot(
         self,
-        pngfile,
-        zoom=None,
-        title="Flood Depth (m)",
-        color_values=None,
-        cmap="Blues",
-        vmin=0.0,
-        vmax=5.0,
-        lon_lim=None,
-        lat_lim=None,
-        width=10.0,
-        background="EsriWorldImagery",
+        pngfile: str,
+        zoom: int | None = None,
+        title: str = "Flood Depth (m)",
+        color_values: list[dict] | None = None,
+        cmap: str = "Blues",
+        vmin: float = 0.0,
+        vmax: float = 5.0,
+        lon_lim: list[float] | None = None,
+        lat_lim: list[float] | None = None,
+        width: float = 10.0,
+        background: str = "EsriWorldImagery",
     ) -> None:
-        """
-        Plot the flood map using matplotlib and save it to a PNG file.
+        """Plot the flood map with a basemap and save to PNG.
 
-        Parameters:
+        Parameters
         ----------
         pngfile : str
-            Path to the output PNG file.
-        zoom : int, optional
-            Zoom level for the map. Default is None.
-        title : str, optional
-            Title of the plot. Default is "Flood Depth (m)".
-        color_values : list, optional
-            List of dictionaries containing color values and ranges for discrete colors. Default is None.
-        cmap : str, optional
-            Colormap to use for continuous colors. Default is "Blues".
-        vmin : float, optional
-            Minimum value for color mapping. Default is 0.0.
-        vmax : float, optional
-            Maximum value for color mapping. Default is 5.0.
-        lon_lim : list, optional
-            Longitude limits for the plot. Default is None.
-        lat_lim : list, optional
-            Latitude limits for the plot. Default is None.
-        width : float, optional
-            Width of the plot in inches. Default is 10.0.
+            Output PNG file path.
+        zoom : int | None
+            Basemap zoom level. If None, auto-detected.
+        title : str
+            Plot title.
+        color_values : list[dict] | None
+            Discrete color definitions. If a string is passed, a default
+            flood depth color scheme is used.
+        cmap : str
+            Matplotlib colormap for continuous coloring.
+        vmin : float
+            Minimum value for color mapping.
+        vmax : float
+            Maximum value for color mapping.
+        lon_lim : list[float] | None
+            Longitude limits ``[lon_min, lon_max]``.
+        lat_lim : list[float] | None
+            Latitude limits ``[lat_min, lat_max]``.
+        width : float
+            Figure width in inches.
+        background : str
+            Basemap provider: ``"osm"`` or ``"EsriWorldImagery"``.
         """
-
         if lon_lim is None or lat_lim is None:
             lon_min = self.ds.x.min().to_numpy()
             lat_min = self.ds.y.min().to_numpy()
             lon_max = self.ds.x.max().to_numpy()
             lat_max = self.ds.y.max().to_numpy()
-            # Use CRS of the data
             crs = self.ds[self.data_array_name].rio.crs
             transformer = Transformer.from_crs(crs, "EPSG:3857", always_xy=True)
             x_min, y_min = transformer.transform(lon_min, lat_min)
             x_max, y_max = transformer.transform(lon_max, lat_max)
         else:
-            # Reproject bbox to EPSG:3857
             transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
             x_min, y_min = transformer.transform(lon_lim[0], lat_lim[0])
             x_max, y_max = transformer.transform(lon_lim[1], lat_lim[1])
 
-        # Reproject to Web Mercator (EPSG:3857)
         da_3857 = self.ds[self.data_array_name].rio.reproject("EPSG:3857")
 
         if color_values is None:
@@ -503,7 +475,6 @@ class FloodMap:
         else:
             discrete_colors = True
             if isinstance(color_values, str):
-                # Use default
                 color_values = []
                 color_values.append(
                     {"color": "lightgreen", "lower_value": 0.1, "upper_value": 0.3}
@@ -516,7 +487,6 @@ class FloodMap:
                 )
                 color_values.append({"color": "red", "lower_value": 2.0})
 
-        # Set up the figure
         aspect_ratio = (y_max - y_min) / (x_max - x_min)
         fig, ax = plt.subplots(figsize=(width, aspect_ratio * width))
 
@@ -533,25 +503,20 @@ class FloodMap:
                     classified = classified.where(
                         ~((masked > lv) & (masked <= uv)), icolor + 1
                     )
-                    labels.append(f"{lv}–{uv} m")
+                    labels.append(f"{lv}--{uv} m")
                 else:
                     lv = color_value["lower_value"]
                     classified = classified.where(~(masked > lv), icolor + 1)
                     labels.append(f">{lv} m")
                 colors.append(color_value["color"])
 
-            # Discrete colormap
             cmap = ListedColormap(colors)
-            # bounds is list from 1 to len(colors) + 1
-            # e.g. [1, 2, 3, 4, 5] for 4 colors
             bounds = list(range(1, len(colors) + 2))
 
             norm = BoundaryNorm(bounds, cmap.N)
 
-            # Plot using xarray's built-in plotting
             classified.plot(ax=ax, cmap=cmap, norm=norm, add_colorbar=False)
 
-            # Custom legend
             legend_elements = []
             for i, color_value in enumerate(color_values):
                 legend_elements.append(
@@ -560,7 +525,6 @@ class FloodMap:
             plt.legend(handles=legend_elements, title="Flood Depth", loc="lower right")
 
         else:
-            # Plot the water depth
             da_3857.plot(
                 ax=ax,
                 cmap=cmap,
@@ -568,10 +532,9 @@ class FloodMap:
                 vmax=vmax,
                 add_colorbar=True,
                 cbar_kwargs={"label": "Flood Depth (m)"},
-                alpha=0.75,  # semi-transparent
+                alpha=0.75,
             )
 
-        # Add OpenStreetMap basemap
         if background.lower() == "osm":
             if zoom is None:
                 ctx.add_basemap(
@@ -597,19 +560,12 @@ class FloodMap:
                     zoom=zoom,
                 )
 
-        # # Add scalebar (in meters)
-        # scalebar = ScaleBar(1, units="m", location="lower left")  # scale=1 since coords are in meters
-        # ax.add_artist(scalebar)
-
-        # Zoom to bbox
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
 
-        # Clean layout
         ax.set_axis_off()
         plt.title(title)
 
-        # Save to PNG
         plt.tight_layout()
         plt.savefig(pngfile, dpi=300, bbox_inches="tight", pad_inches=0.1)
 
@@ -617,41 +573,37 @@ class FloodMap:
 def get_appropriate_overview_level(
     src: rasterio.io.DatasetReader, max_pixel_size: float
 ) -> int:
-    """
-    Given a rasterio dataset `src` and a desired `max_pixel_size`,
-    determine the appropriate overview level (zoom level) that fits
-    the maximum resolution allowed by `max_pixel_size`.
+    """Determine the appropriate rasterio overview level for a target resolution.
 
-    Parameters:
-    src (rasterio.io.DatasetReader): The rasterio dataset reader object.
-    max_pixel_size (float): The maximum pixel size for the resolution.
+    Parameters
+    ----------
+    src : rasterio.io.DatasetReader
+        An open rasterio dataset.
+    max_pixel_size : float
+        Maximum desired pixel size in metres.
 
-    Returns:
-    int: The appropriate overview level.
+    Returns
+    -------
+    int
+        The overview level index (0 = native resolution).
     """
-    # Get the original resolution (pixel size) in terms of x and y
-    original_resolution = src.res  # Tuple of (x_resolution, y_resolution)
+    original_resolution = src.res
     if src.crs.is_geographic:
         original_resolution = (
             original_resolution[0] * 111000,
             original_resolution[1] * 111000,
-        )  # Convert to meters
-    # Get the overviews for the dataset
-    overview_levels = src.overviews(
-        1
-    )  # Overview levels for the first band (if multi-band, you can adjust this)
+        )
 
-    # If there are no overviews, return 0 (native resolution)
+    overview_levels = src.overviews(1)
+
     if not overview_levels:
         return 0
 
-    # Calculate the resolution for each overview by multiplying the original resolution by the overview factor
     resolutions = [
         (original_resolution[0] * factor, original_resolution[1] * factor)
         for factor in overview_levels
     ]
 
-    # Find the highest overview level that is smaller than or equal to the max_pixel_size
     selected_overview = 0
     for i, (x_res, y_res) in enumerate(resolutions):
         if x_res <= max_pixel_size and y_res <= max_pixel_size:
@@ -663,43 +615,46 @@ def get_appropriate_overview_level(
 
 
 def get_rgb_data_array(
-    da: xr.DataArray, cmap: str, cmin: float = None, cmax: float = None, color_values=None, discrete_colors=False
+    da: xr.DataArray,
+    cmap: str,
+    cmin: float | None = None,
+    cmax: float | None = None,
+    color_values: list[dict] | None = None,
+    discrete_colors: bool = False,
 ) -> xr.DataArray:
-    """
-    Convert a DataArray to RGB using either a colormap or discrete color values.
+    """Convert an xarray DataArray to an RGBA DataArray using a colormap.
 
-    Parameters:
+    Supports both continuous colormaps and discrete color value ranges.
+
+    Parameters
     ----------
     da : xr.DataArray
-        The input DataArray to be converted.
-    cmap : str, optional
-        The colormap to use (e.g., 'viridis'). Used when color_values is None.
-    cmin : float, optional
-        Minimum value for normalization. If None, the minimum value of the data is used.
-    cmax : float, optional
-        Maximum value for normalization. If None, the maximum value of the data is used.
-    color_values : list, optional
-        List of dictionaries containing discrete color definitions with keys:
-        'lower_value' (optional), 'upper_value' (optional), and 'rgb' (list of 3 values 0-255).
-        At least one of 'lower_value' or 'upper_value' must be specified.
-        If provided, this takes precedence over cmap.
+        Input 2-D data array.
+    cmap : str
+        Matplotlib colormap name for continuous coloring.
+    cmin : float | None
+        Minimum value for normalization. Defaults to data minimum.
+    cmax : float | None
+        Maximum value for normalization. Defaults to data maximum.
+    color_values : list[dict] | None
+        Discrete color definitions with ``lower_value``, ``upper_value``,
+        and ``rgb`` keys.
+    discrete_colors : bool
+        If True and ``color_values`` is provided, use discrete coloring
+        via named color strings.
 
-    Returns:
+    Returns
     -------
     xr.DataArray
-        The RGB DataArray.
+        RGBA DataArray with shape ``(4, height, width)`` and dtype uint8.
     """
     if color_values is not None:
-        # Get the shape and flatten the data
         ny, nx = da.shape
         zz = da.to_numpy()
-        # Use discrete color values
         rgba = np.zeros((ny, nx, 4), "uint8")
 
     if discrete_colors:
-
         if isinstance(color_values, str):
-            # Use default
             color_values = []
             color_values.append(
                 {"color": "lightgreen", "lower_value": 0.1, "upper_value": 0.3}
@@ -712,14 +667,15 @@ def get_rgb_data_array(
             )
             color_values.append({"color": "red", "lower_value": 2.0})
 
-        # Initialize an RGBA array with zeros
         rgba = np.zeros((da.shape[0], da.shape[1], 4), dtype=np.float32)
-        # Loop through color classes
         for icolor, color_value in enumerate(color_values):
-            # Get rgb float values for this color (between 0.0 and 1.0)
             color_rgba = cm.colors.to_rgba(color_value["color"])
             if "lower_value" in color_values and "upper_value" in color_value:
-                rgba[(da >= color_value["lower_value"]) & (da < color_value["upper_value"]), :] = color_rgba
+                rgba[
+                    (da >= color_value["lower_value"])
+                    & (da < color_value["upper_value"]),
+                    :,
+                ] = color_rgba
             elif "lower_value" in color_value:
                 rgba[(da >= color_value["lower_value"]), :] = color_rgba
             elif "upper_value" in color_value:
@@ -734,42 +690,28 @@ def get_rgb_data_array(
             rgba[valid, 3] = 255
 
     else:
-        # Use continuous colormap (existing functionality)
         if cmap is None:
             raise ValueError("Either color_values or cmap must be provided")
 
-        # Normalize the data
         if cmin is None:
             cmin = da.min()
         if cmax is None:
             cmax = da.max()
 
-        # Ensure cmin and cmax are not equal to avoid division by zero
-        if cmin == cmax:
-            cmin = cmax - 1.0
-            cmax = cmax + 1.0
-        # Ensure cmin and cmax are not equal to avoid division by zero
         if cmin == cmax:
             cmin = cmax - 1.0
             cmax = cmax + 1.0
 
-        # Normalize to [0, 1]
-        normed = (da - cmin) / (cmax - cmin)
-        # Normalize to [0, 1]
         normed = (da - cmin) / (cmax - cmin)
 
-        # Get colormap
         cmap_obj = plt.get_cmap(cmap)
 
-        # Apply colormap (returns RGBA)
         rgba = cmap_obj(normed)
 
-        # Convert to 8-bit RGB
         rgba = (rgba[:, :, :] * 255).astype("uint8")
 
-    # Convert to DataArray with 'band' dimension
     rgb_da = xr.DataArray(
-        np.moveaxis(rgba, -1, 0),  # shape: (4, height, width)
+        np.moveaxis(rgba, -1, 0),
         dims=("band", "y", "x"),
         coords={"band": [0, 1, 2, 3], "y": da.y, "x": da.x},
         attrs=da.attrs,
@@ -780,10 +722,41 @@ def get_rgb_data_array(
     return rgb_da
 
 
-def reproject_bbox(xmin, ymin, xmax, ymax, crs_src, crs_dst, buffer=0.0):
+def reproject_bbox(
+    xmin: float,
+    ymin: float,
+    xmax: float,
+    ymax: float,
+    crs_src: str,
+    crs_dst: str,
+    buffer: float = 0.0,
+) -> tuple[float, float, float, float]:
+    """Reproject a bounding box between coordinate reference systems.
+
+    Parameters
+    ----------
+    xmin : float
+        Minimum x (or longitude).
+    ymin : float
+        Minimum y (or latitude).
+    xmax : float
+        Maximum x (or longitude).
+    ymax : float
+        Maximum y (or latitude).
+    crs_src : str
+        Source CRS string (e.g. ``"EPSG:4326"``).
+    crs_dst : str
+        Destination CRS string.
+    buffer : float
+        Fractional buffer to expand the bounding box before reprojection.
+
+    Returns
+    -------
+    tuple[float, float, float, float]
+        Reprojected bounding box ``(xmin, ymin, xmax, ymax)``.
+    """
     transformer = Transformer.from_crs(crs_src, crs_dst, always_xy=True)
 
-    # Buffer the bounding box
     dx = (xmax - xmin) * buffer
     dy = (ymax - ymin) * buffer
     xmin -= dx
@@ -791,56 +764,62 @@ def reproject_bbox(xmin, ymin, xmax, ymax, crs_src, crs_dst, buffer=0.0):
     ymin -= dy
     ymax += dy
 
-    # Transform all four corners
     x0, y0 = transformer.transform(xmin, ymin)
     x1, y1 = transformer.transform(xmax, ymin)
     x2, y2 = transformer.transform(xmax, ymax)
     x3, y3 = transformer.transform(xmin, ymax)
 
-    # New bounding box
     xs = [x0, x1, x2, x3]
     ys = [y0, y1, y2, y3]
 
     return min(xs), min(ys), max(xs), max(ys)
 
 
-# The following methods are used to make flood maps from tiles
-
-
 def make_flood_map_tiles(
-    valg,
-    index_path,
-    png_path,
-    topo_path,
-    option="deterministic",
-    zoom_range=None,
-    color_values=None,
-    caxis=None,
-    zbmax=-999.0,
-    merge=True,
-    depth=None,
-    quiet=False,
-):
+    valg: np.ndarray,
+    index_path: str,
+    png_path: str,
+    topo_path: str,
+    option: str = "deterministic",
+    zoom_range: list[int] | None = None,
+    color_values: list[dict] | None = None,
+    caxis: list[float] | None = None,
+    zbmax: float = -999.0,
+    merge: bool = True,
+    depth: float | None = None,
+    quiet: bool = False,
+) -> None:
+    """Generate flood map PNG tiles from water level data and index/topo tiles.
+
+    Parameters
+    ----------
+    valg : np.ndarray
+        Water level values (1-D array indexed by cell index, or a list
+        of CDF interpolators for probabilistic mode).
+    index_path : str
+        Directory containing index tile PNGs.
+    png_path : str
+        Output directory for the generated flood map tiles.
+    topo_path : str
+        Directory containing topobathy tile PNGs.
+    option : str
+        Tile generation mode: ``"deterministic"`` or ``"probabilistic"``.
+    zoom_range : list[int] | None
+        Two-element list ``[min_zoom, max_zoom]``. Auto-detected if None.
+    color_values : list[dict] | None
+        Discrete color definitions with ``lower_value``, ``upper_value``,
+        and ``rgb`` keys.
+    caxis : list[float] | None
+        Color axis range ``[vmin, vmax]``. Auto-detected if None.
+    zbmax : float
+        Maximum bed level; flood in areas below this is suppressed.
+    merge : bool
+        Whether to merge new tiles with existing ones.
+    depth : float | None
+        Water depth offset for probabilistic mode.
+    quiet : bool
+        Whether to suppress progress output.
     """
-    Generates PNG web tiles
-
-    :param valg: Name of the scenario to be run.
-    :type valg: array
-    :param index_path: Path where the index tiles are sitting.
-    :type index_path: str
-    :param png_path: Output path where the png tiles will be created.
-    :type png_path: str
-    :param option: Option to define the type of tiles to be generated.
-    Options are 'direct', 'floodmap', 'topography'. Defaults to 'direct',
-    in which case the values in *valg* are used directly.
-    :type option: str
-    :param zoom_range: Zoom range for which
-    the png tiles will be created.
-    Defaults to [0, 23].
-    :type zoom_range: list of int
-
-    """
-
     if isinstance(valg, list):
         pass
     else:
@@ -853,7 +832,6 @@ def make_flood_map_tiles(
 
     # First do highest zoom level, then derefine from there
     if not zoom_range:
-        # Check available levels in index tiles
         levs = fo.list_folders(os.path.join(index_path, "*"), basename=True)
         zoom_range = [999, -999]
         for lev in levs:
@@ -863,7 +841,7 @@ def make_flood_map_tiles(
     izoom = zoom_range[1]
 
     if not quiet:
-        print("Processing zoom level " + str(izoom))
+        print(f"Processing zoom level {izoom}")
 
     index_zoom_path = os.path.join(index_path, str(izoom))
 
@@ -881,22 +859,15 @@ def make_flood_map_tiles(
             j = int(jfile[:-4])
 
             index_file = os.path.join(index_zoom_path_i, jfile)
-            png_file = os.path.join(png_zoom_path_i, str(j) + ".png")
+            png_file = os.path.join(png_zoom_path_i, f"{j}.png")
 
             ind = png2int(index_file, -1)
             ind = ind.flatten()
 
             if option == "probabilistic":
-                # valg is actually CDF interpolator to obtain probability of water level
-
-                # Read bathy
-                bathy_file = os.path.join(
-                    topo_path, str(izoom), ifolder, str(j) + ".png"
-                )
+                bathy_file = os.path.join(topo_path, str(izoom), ifolder, f"{j}.png")
                 if not os.path.exists(bathy_file):
-                    # No bathy for this tile, continue
                     continue
-                # zb = np.fromfile(bathy_file, dtype="f4")
                 zb = png2elevation(bathy_file).flatten()
                 zs = zb + depth
 
@@ -904,38 +875,23 @@ def make_flood_map_tiles(
                 valt[ind < 0] = np.nan
 
             else:
-                # Read bathy
-                bathy_file = os.path.join(
-                    topo_path, str(izoom), ifolder, str(j) + ".png"
-                )
+                bathy_file = os.path.join(topo_path, str(izoom), ifolder, f"{j}.png")
                 if not os.path.exists(bathy_file):
-                    # No bathy for this tile, continue
                     continue
-                # zb = np.fromfile(bathy_file, dtype="f4")
                 zb = png2elevation(bathy_file).flatten()
 
                 noval = np.where(ind < 0)
                 ind[ind < 0] = 0
                 valt = valg[ind]
 
-                # # Get the variance of zb
-                # zbvar = np.var(zb)
-                # zbmn = np.min(zb)
-                # zbmx = np.max(zb)
-                # # If there is not a lot of change in bathymetry, set zb to mean of zb
-                # # Should try to compute a slope here
-                # if zbmx - zbmn < 5.0:
-                #     zb = np.full_like(zb, np.mean(zb))
-
-                valt = valt - zb  # depth = water level - topography
-                valt[valt < 0.10] = np.nan  # 0.10 is the threshold for water level
-                valt[zb < zbmax] = np.nan  # don't show flood in water areas
-                valt[noval] = np.nan  # don't show flood outside model domain
+                valt = valt - zb
+                valt[valt < 0.10] = np.nan
+                valt[zb < zbmax] = np.nan
+                valt[noval] = np.nan
 
             if color_values:
                 rgb = np.zeros((256 * 256, 4), "uint8")
 
-                # Determine value based on user-defined ranges
                 for color_value in color_values:
                     inr = np.logical_and(
                         valt >= color_value["lower_value"],
@@ -948,13 +904,10 @@ def make_flood_map_tiles(
 
                 rgb = rgb.reshape([256, 256, 4])
                 if not np.any(rgb > 0):
-                    # Values found, go on to the next tiles
                     continue
-                # rgb = np.flip(rgb, axis=0)
                 im = Image.fromarray(rgb)
 
             else:
-                #                valt = np.flipud(valt.reshape([256, 256]))
                 valt = valt.reshape([256, 256])
                 valt = (valt - caxis[0]) / (caxis[1] - caxis[0])
                 valt[valt < 0.0] = 0.0
@@ -967,16 +920,13 @@ def make_flood_map_tiles(
                     path_okay = True
 
             if os.path.exists(png_file):
-                # This tile already exists
                 if merge:
                     im0 = Image.open(png_file)
                     rgb = np.array(im)
                     rgb0 = np.array(im0)
                     isum = np.sum(rgb, axis=2)
                     rgb[isum == 0, :] = rgb0[isum == 0, :]
-                    #                        rgb[rgb==0] = rgb0[rgb==0]
                     im = Image.fromarray(rgb)
-            #                        im.show()
 
             im.save(png_file)
 
@@ -984,7 +934,7 @@ def make_flood_map_tiles(
 
     for izoom in range(zoom_range[1] - 1, zoom_range[0] - 1, -1):
         if not quiet:
-            print("Processing zoom level " + str(izoom))
+            print(f"Processing zoom level {izoom}")
 
         index_zoom_path = os.path.join(index_path, str(izoom))
 
@@ -1006,7 +956,7 @@ def make_flood_map_tiles(
                 jfile = os.path.basename(jfile)
                 j = int(jfile[:-4])
 
-                png_file = os.path.join(png_zoom_path_i, str(j) + ".png")
+                png_file = os.path.join(png_zoom_path_i, f"{j}.png")
 
                 rgb = np.zeros((256, 256, 4), "uint8")
 
@@ -1015,10 +965,10 @@ def make_flood_map_tiles(
                 j0 = j * 2 + 1
                 j1 = j * 2
 
-                tile_name_00 = os.path.join(png_zoom_path_p1, str(i0), str(j0) + ".png")
-                tile_name_10 = os.path.join(png_zoom_path_p1, str(i0), str(j1) + ".png")
-                tile_name_01 = os.path.join(png_zoom_path_p1, str(i1), str(j0) + ".png")
-                tile_name_11 = os.path.join(png_zoom_path_p1, str(i1), str(j1) + ".png")
+                tile_name_00 = os.path.join(png_zoom_path_p1, str(i0), f"{j0}.png")
+                tile_name_10 = os.path.join(png_zoom_path_p1, str(i0), f"{j1}.png")
+                tile_name_01 = os.path.join(png_zoom_path_p1, str(i1), f"{j0}.png")
+                tile_name_11 = os.path.join(png_zoom_path_p1, str(i1), f"{j1}.png")
 
                 okay = False
 
@@ -1052,7 +1002,6 @@ def make_flood_map_tiles(
                             path_okay = True
 
                     if os.path.exists(png_file):
-                        # This tile already exists
                         if merge:
                             im0 = Image.open(png_file)
                             rgb = np.array(im)
@@ -1060,55 +1009,79 @@ def make_flood_map_tiles(
                             isum = np.sum(rgb, axis=2)
                             rgb[isum == 0, :] = rgb0[isum == 0, :]
                             im = Image.fromarray(rgb)
-                    #                        im.show()
 
                     im.save(png_file)
 
 
-# Flood map overlay new format
 def make_flood_map_overlay_v2(
-    valg,
-    index_path,
-    topo_path,
-    zmax_minus_zmin=None,
-    mean_depth=None,
-    npixels=[1200, 800],
-    hmin=0.10,
-    dzdx_mild=0.01,
-    lon_range=None,
-    lat_range=None,
-    option="deterministic",
-    color_values=None,
-    caxis=None,
-    zbmax=-999.0,
-    merge=True,
-    depth=None,
-    quiet=False,
-    file_name=None,
-):
+    valg: np.ndarray,
+    index_path: str,
+    topo_path: str,
+    zmax_minus_zmin: np.ndarray | None = None,
+    mean_depth: np.ndarray | None = None,
+    npixels: list[int] = [1200, 800],
+    hmin: float = 0.10,
+    dzdx_mild: float = 0.01,
+    lon_range: list[float] | None = None,
+    lat_range: list[float] | None = None,
+    option: str = "deterministic",
+    color_values: list[dict] | None = None,
+    caxis: list[float] | None = None,
+    zbmax: float = -999.0,
+    merge: bool = True,
+    depth: float | None = None,
+    quiet: bool = False,
+    file_name: str | None = None,
+) -> tuple[list[float], list[float], list[float]] | tuple[None, None]:
+    """Generate a single flood map overlay PNG from tiles at an auto-selected zoom.
+
+    Parameters
+    ----------
+    valg : np.ndarray
+        Water level values (1-D array or DataArray).
+    index_path : str
+        Directory containing index tile PNGs.
+    topo_path : str
+        Directory containing topobathy tile PNGs.
+    zmax_minus_zmin : np.ndarray | None
+        Per-cell elevation range for slope filtering.
+    mean_depth : np.ndarray | None
+        Per-cell mean water depth (volume / area).
+    npixels : list[int]
+        Target output size ``[width, height]`` in pixels.
+    hmin : float
+        Minimum water depth threshold.
+    dzdx_mild : float
+        Slope threshold below which mean_depth overrides pixel depth.
+    lon_range : list[float] | None
+        Longitude range ``[lon_min, lon_max]``.
+    lat_range : list[float] | None
+        Latitude range ``[lat_min, lat_max]``.
+    option : str
+        Mode: ``"deterministic"`` or ``"probabilistic"``.
+    color_values : list[dict] | None
+        Discrete color definitions.
+    caxis : list[float] | None
+        Color axis range. Auto-detected if None.
+    zbmax : float
+        Maximum bed level for flood masking.
+    merge : bool
+        Whether to merge with existing tiles.
+    depth : float | None
+        Water depth offset for probabilistic mode.
+    quiet : bool
+        Whether to suppress progress output.
+    file_name : str | None
+        Output PNG file path.
+
+    Returns
+    -------
+    tuple[list[float], list[float], list[float]] | tuple[None, None]
+        ``([lon_min, lon_max], [lat_min, lat_max], caxis)`` on success,
+        or ``(None, None)`` on failure.
     """
-    Generates overlay PNG from tiles
-
-    :param valg: Name of the scenario to be run.
-    :type valg: array
-    :param index_path: Path where the index tiles are sitting.
-    :type index_path: str
-    :param png_path: Output path where the png tiles will be created.
-    :type png_path: str
-    :param option: Option to define the type of tiles to be generated.
-    Options are 'direct', 'floodmap', 'topography'. Defaults to 'direct',
-    in which case the values in *valg* are used directly.
-    :type option: str
-    :param zoom_range: Zoom range for which
-    the png tiles will be created.
-    Defaults to [0, 23].
-    :type zoom_range: list of int
-
-    """
-
     try:
         if isinstance(valg, list):
-            # Why would this ever be a list ?!
             print("valg is a list!")
             pass
         elif isinstance(valg, xr.DataArray):
@@ -1118,7 +1091,6 @@ def make_flood_map_overlay_v2(
             if zmax_minus_zmin is not None:
                 zmax_minus_zmin = zmax_minus_zmin.to_numpy()
         else:
-            # valg is a 2D array
             valg = valg.transpose().flatten()
             if mean_depth is not None:
                 mean_depth = mean_depth.transpose().flatten()
@@ -1126,27 +1098,19 @@ def make_flood_map_overlay_v2(
                 zmax_minus_zmin = zmax_minus_zmin.transpose().flatten()
 
         if mean_depth is not None and zmax_minus_zmin is not None:
-            # Mean depth is obtained from SFINCS as volume over cell area
-            # zmax_minus_zmin is the difference between zmax and zmin in the cell
-            # Set mean_depth to NaN where zmax_minus_zmin is greater than dzmild
             mean_depth[(zmax_minus_zmin > dzdx_mild)] = np.nan
 
-        # Check available levels in index tiles
         max_zoom = 0
         levs = fo.list_folders(os.path.join(index_path, "*"), basename=True)
         for lev in levs:
             max_zoom = max(max_zoom, int(lev))
 
-        # Find zoom level that provides sufficient pixels
         for izoom in range(max_zoom + 1):
-            # ix0, it0 = deg2num(lat_range[0], lon_range[0], izoom)
-            # ix1, it1 = deg2num(lat_range[1], lon_range[1], izoom)
             ix0, it0 = deg2num(lat_range[1], lon_range[0], izoom)
             ix1, it1 = deg2num(lat_range[0], lon_range[1], izoom)
             if (ix1 - ix0 + 1) * 256 > npixels[0] and (it1 - it0 + 1) * 256 > npixels[
                 1
             ]:
-                # Found sufficient zoom level
                 break
 
         index_zoom_path = os.path.join(index_path, str(izoom))
@@ -1157,7 +1121,7 @@ def make_flood_map_overlay_v2(
         zz[:] = np.nan
 
         if not quiet:
-            print("Processing zoom level " + str(izoom))
+            print(f"Processing zoom level {izoom}")
 
         index_zoom_path = os.path.join(index_path, str(izoom))
 
@@ -1166,7 +1130,7 @@ def make_flood_map_overlay_v2(
             index_zoom_path_i = os.path.join(index_zoom_path, ifolder)
 
             for j in range(it0, it1 + 1):
-                index_file = os.path.join(index_zoom_path_i, str(j) + ".png")
+                index_file = os.path.join(index_zoom_path_i, f"{j}.png")
 
                 if not os.path.exists(index_file):
                     continue
@@ -1174,16 +1138,11 @@ def make_flood_map_overlay_v2(
                 ind = png2int(index_file, -1)
 
                 if option == "probabilistic":
-                    # This needs to be fixed later on
-                    # valg is actually CDF interpolator to obtain probability of water level
-
-                    # Read bathy
                     bathy_file = os.path.join(
-                        topo_path, str(izoom), ifolder, str(j) + ".png"
+                        topo_path, str(izoom), ifolder, f"{j}.png"
                     )
 
                     if not os.path.exists(bathy_file):
-                        # No bathy for this tile, continue
                         continue
 
                     zb = np.fromfile(bathy_file, dtype="f4")
@@ -1193,33 +1152,26 @@ def make_flood_map_overlay_v2(
                     valt[ind < 0] = np.nan
 
                 else:
-                    # Read bathy
                     bathy_file = os.path.join(
-                        topo_path, str(izoom), ifolder, str(j) + ".png"
+                        topo_path, str(izoom), ifolder, f"{j}.png"
                     )
                     if not os.path.exists(bathy_file):
-                        # No bathy for this tile, continue
                         continue
 
                     zb = png2elevation(bathy_file)
 
-                    valt = valg[ind]  # water level in pixels
+                    valt = valg[ind]
 
-                    valt = valt - zb  # water depth in pixels
+                    valt = valt - zb
 
-                    # Now we override pixels values in very mild sloping cells with mean depth
                     if mean_depth is not None:
-                        # Compute mean depth as volume over cell area
                         mean_depth_p = mean_depth[ind]
-                        # Override valt with mean_depth_p where mean_depth_p is not NaN
                         valt[~np.isnan(mean_depth_p)] = mean_depth_p[
                             ~np.isnan(mean_depth_p)
                         ]
 
-                    valt[valt < hmin] = (
-                        np.nan
-                    )  # set to nan if water depth is less than hmin
-                    valt[zb < zbmax] = np.nan  # don't show flood in water areas
+                    valt[valt < hmin] = np.nan
+                    valt[zb < zbmax] = np.nan
 
                 ii0 = (i - ix0) * 256
                 ii1 = ii0 + 256
@@ -1228,10 +1180,8 @@ def make_flood_map_overlay_v2(
                 zz[jj0:jj1, ii0:ii1] = valt
 
         if color_values:
-            # Create empty rgb array
             zz = zz.flatten()
             rgb = np.zeros((ny * nx, 4), "uint8")
-            # Determine value based on user-defined ranges
             for color_value in color_values:
                 inr = np.logical_and(
                     zz >= color_value["lower_value"], zz < color_value["upper_value"]
@@ -1252,15 +1202,11 @@ def make_flood_map_overlay_v2(
             zz[zz < 0.0] = 0.0
             zz[zz > 1.0] = 1.0
             im = Image.fromarray(cm.jet(zz, bytes=True))
-            # # For any nan values, set alpha to 0
-            # # Get rgb values
-            # rgb = np.array(im)
-            # im.putalpha(255 * np.isnan(zz))
 
         if file_name:
             im.save(file_name)
 
-        lat1, lon0 = num2deg(ix0, it0, izoom)  # lat/lon coordinates of upper left cell
+        lat1, lon0 = num2deg(ix0, it0, izoom)
         lat0, lon1 = num2deg(ix1 + 1, it1 + 1, izoom)
 
         return [lon0, lon1], [lat0, lat1], caxis
@@ -1269,21 +1215,3 @@ def make_flood_map_overlay_v2(
         print(e)
         traceback.print_exc()
         return None, None
-
-
-# def deg2num(lat_deg, lon_deg, zoom):
-#     """Returns column and row index of slippy tile"""
-#     lat_rad = math.radians(lat_deg)
-#     n = 2**zoom
-#     xtile = int((lon_deg + 180.0) / 360.0 * n)
-#     ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
-#     return (xtile, ytile)
-
-# def num2deg(xtile, ytile, zoom):
-#     """Returns upper left latitude and longitude of slippy tile"""
-#     # Return upper left corner of tile
-#     n = 2**zoom
-#     lon_deg = xtile / n * 360.0 - 180.0
-#     lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
-#     lat_deg = math.degrees(lat_rad)
-#     return (lat_deg, lon_deg)

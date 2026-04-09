@@ -1,29 +1,30 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu May 27 14:51:04 2021
+"""Utility functions for tile coordinate conversions, elevation/PNG encoding, and interpolation."""
 
-@author: ormondt
-"""
+from __future__ import annotations
 
-import glob
 import math
 import os
 
 import numpy as np
-
-# from matplotlib import cm
-# from matplotlib.colors import LightSource
+from numpy.typing import NDArray
 from PIL import Image
-
-# from pyproj import CRS, Transformer
 from scipy.interpolate import RegularGridInterpolator
 
 
-def get_zoom_level_for_resolution(dx):
-    # Get required zoom level
-    # Make numpy array with pixel size in meters for all zoom levels
+def get_zoom_level_for_resolution(dx: float) -> int:
+    """Determine the tile zoom level that matches a given spatial resolution.
+
+    Parameters
+    ----------
+    dx : float
+        Desired pixel size in metres.
+
+    Returns
+    -------
+    int
+        Zoom level (0-23) whose native pixel size is just below *dx*.
+    """
     dxy = 156543.03 / 2 ** np.arange(24)
-    # Find zoom level that provides sufficient pixels
     izoom = np.where(dxy < dx)[0]
     if len(izoom) == 0:
         izoom = 23
@@ -32,15 +33,25 @@ def get_zoom_level_for_resolution(dx):
     return izoom
 
 
-def get_zoom_level(npixels, lat_range, max_zoom):
-    # Get required zoom level
-    # lat = np.pi * (lat_range[0] + lat_range[1]) / 360
-    # dx = (lon_range[1] - lon_range[0]) * 111111 * np.cos(lat) / npixels[0]
+def get_zoom_level(npixels: int, lat_range: list[float], max_zoom: int) -> int:
+    """Determine the zoom level needed to cover a latitude range with a given pixel count.
+
+    Parameters
+    ----------
+    npixels : int
+        Number of pixels available in the latitude direction.
+    lat_range : list[float]
+        Two-element list ``[lat_min, lat_max]`` in degrees.
+    max_zoom : int
+        Maximum allowed zoom level.
+
+    Returns
+    -------
+    int
+        Appropriate zoom level.
+    """
     dxr = (lat_range[1] - lat_range[0]) * 111111 / npixels
-    # dxr = min(dx, dy)
-    # Make numpy array with pixel size in meters for all zoom levels
     dxy = 156543.03 / 2 ** np.arange(max_zoom + 1)
-    # Find zoom level that provides sufficient pixels
     izoom = np.where(dxy < dxr)[0]
     if len(izoom) == 0:
         izoom = max_zoom
@@ -49,7 +60,21 @@ def get_zoom_level(npixels, lat_range, max_zoom):
     return izoom
 
 
-def webmercator_to_lat_lon(easting, northing):
+def webmercator_to_lat_lon(easting: float, northing: float) -> tuple[float, float]:
+    """Convert Web Mercator coordinates to latitude and longitude.
+
+    Parameters
+    ----------
+    easting : float
+        Web Mercator easting in metres.
+    northing : float
+        Web Mercator northing in metres.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(latitude, longitude)`` in degrees.
+    """
     lon = (easting / 20037508.34) * 180
     lat = (180 / math.pi) * (
         2 * math.atan(math.exp(northing / 20037508.34 * math.pi)) - (math.pi / 2)
@@ -57,14 +82,43 @@ def webmercator_to_lat_lon(easting, northing):
     return lat, lon
 
 
-def lat_lon_to_webmercator(lat, lon):
-    # Convert latitude and longitude to Web Mercator coordinates
+def lat_lon_to_webmercator(lat: float, lon: float) -> tuple[float, float]:
+    """Convert latitude and longitude to Web Mercator coordinates.
+
+    Parameters
+    ----------
+    lat : float
+        Latitude in degrees.
+    lon : float
+        Longitude in degrees.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(x, y)`` in Web Mercator metres.
+    """
     x = lon * 20037508.34 / 180
     y = (math.log(math.tan((90 + lat) * math.pi / 360)) / math.pi) * 20037508.34
     return x, y
 
 
-def lat_lon_to_tile_indices(lat, lon, zoom):
+def lat_lon_to_tile_indices(lat: float, lon: float, zoom: int) -> tuple[int, int]:
+    """Convert latitude/longitude to slippy-map tile indices.
+
+    Parameters
+    ----------
+    lat : float
+        Latitude in degrees.
+    lon : float
+        Longitude in degrees.
+    zoom : int
+        Zoom level.
+
+    Returns
+    -------
+    tuple[int, int]
+        ``(tile_x, tile_y)`` column and row indices.
+    """
     tile_x = int((lon + 180) / 360 * (2**zoom))
     tile_y = int(
         (
@@ -80,14 +134,45 @@ def lat_lon_to_tile_indices(lat, lon, zoom):
     return tile_x, tile_y
 
 
-def xy2num(easting, northing, zoom):
+def xy2num(easting: float, northing: float, zoom: int) -> tuple[int, int]:
+    """Convert Web Mercator coordinates to tile indices.
+
+    Parameters
+    ----------
+    easting : float
+        Web Mercator easting in metres.
+    northing : float
+        Web Mercator northing in metres.
+    zoom : int
+        Zoom level.
+
+    Returns
+    -------
+    tuple[int, int]
+        ``(tile_x, tile_y)`` column and row indices.
+    """
     lat, lon = webmercator_to_lat_lon(easting, northing)
     ix, it = lat_lon_to_tile_indices(lat, lon, zoom)
     return ix, it
 
 
-def deg2num(lat_deg, lon_deg, zoom):
-    """Returns column and row index of slippy tile"""
+def deg2num(lat_deg: float, lon_deg: float, zoom: int) -> tuple[int, int]:
+    """Return the column and row index of a slippy tile for a given lat/lon.
+
+    Parameters
+    ----------
+    lat_deg : float
+        Latitude in degrees.
+    lon_deg : float
+        Longitude in degrees.
+    zoom : int
+        Zoom level.
+
+    Returns
+    -------
+    tuple[int, int]
+        ``(xtile, ytile)`` column and row indices.
+    """
     lat_rad = math.radians(lat_deg)
     n = 2**zoom
     xtile = int((lon_deg + 180.0) / 360.0 * n)
@@ -95,9 +180,23 @@ def deg2num(lat_deg, lon_deg, zoom):
     return (xtile, ytile)
 
 
-def num2deg(xtile, ytile, zoom):
-    """Returns upper left latitude and longitude of slippy tile"""
-    # Return upper left corner of tile
+def num2deg(xtile: int, ytile: int, zoom: int) -> tuple[float, float]:
+    """Return the upper-left latitude and longitude of a slippy tile.
+
+    Parameters
+    ----------
+    xtile : int
+        Tile column index.
+    ytile : int
+        Tile row index.
+    zoom : int
+        Zoom level.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(latitude, longitude)`` of the upper-left corner in degrees.
+    """
     n = 2**zoom
     lon_deg = xtile / n * 360.0 - 180.0
     lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
@@ -105,9 +204,23 @@ def num2deg(xtile, ytile, zoom):
     return (lat_deg, lon_deg)
 
 
-def num2xy(xtile, ytile, zoom):
-    """Returns upper left x and y of slippy tile"""
-    # Return upper left corner of tile
+def num2xy(xtile: int, ytile: int, zoom: int) -> tuple[float, float]:
+    """Return the upper-left Web Mercator x/y of a slippy tile.
+
+    Parameters
+    ----------
+    xtile : int
+        Tile column index.
+    ytile : int
+        Tile row index.
+    zoom : int
+        Zoom level.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(x, y)`` in Web Mercator metres.
+    """
     n = 2**zoom
     lon_deg = xtile / n * 360.0 - 180.0
     lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
@@ -116,9 +229,23 @@ def num2xy(xtile, ytile, zoom):
     return x, y
 
 
-### Old index to degrees functions
-def num2deg_ll(xtile, ytile, zoom):
-    # Return lower left corner of tile (only used in old format)
+def num2deg_ll(xtile: int, ytile: int, zoom: int) -> tuple[float, float]:
+    """Return the lower-left latitude and longitude of a slippy tile (old format).
+
+    Parameters
+    ----------
+    xtile : int
+        Tile column index.
+    ytile : int
+        Tile row index.
+    zoom : int
+        Zoom level.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(latitude, longitude)`` of the lower-left corner in degrees.
+    """
     n = 2**zoom
     lon_deg = xtile / n * 360.0 - 180.0
     lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * ytile / n)))
@@ -126,8 +253,23 @@ def num2deg_ll(xtile, ytile, zoom):
     return (lat_deg, lon_deg)
 
 
-def num2deg_ur(xtile, ytile, zoom):
-    # Return upper_right corner of tile (only used in old format)
+def num2deg_ur(xtile: int, ytile: int, zoom: int) -> tuple[float, float]:
+    """Return the upper-right latitude and longitude of a slippy tile (old format).
+
+    Parameters
+    ----------
+    xtile : int
+        Tile column index.
+    ytile : int
+        Tile row index.
+    zoom : int
+        Zoom level.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(latitude, longitude)`` of the upper-right corner in degrees.
+    """
     n = 2**zoom
     lon_deg = (xtile + 1) / n * 360.0 - 180.0
     lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * (ytile + 1) / n)))
@@ -135,50 +277,62 @@ def num2deg_ur(xtile, ytile, zoom):
     return (lat_deg, lon_deg)
 
 
-# def num2xy_ll(xtile, ytile, zoom):
-#     lat, lon = num2deg_ll(xtile, ytile, zoom)
-#     x, y     = lat_lon_to_webmercator(lat, lon)
-#     return x, y
+def get_lower_left_corner(tile_x: int, tile_y: int, zoom: int) -> tuple[float, float]:
+    """Return the lower-left Web Mercator coordinates of a tile.
 
-# def num2xy_ur(xtile, ytile, zoom):
-#     lat, lon = num2deg_ur(xtile, ytile, zoom)
-#     x, y     = lat_lon_to_webmercator(lat, lon)
-#     return x, y
+    Parameters
+    ----------
+    tile_x : int
+        Tile column index.
+    tile_y : int
+        Tile row index.
+    zoom : int
+        Zoom level.
 
-
-def get_lower_left_corner(tile_x, tile_y, zoom):
-    # Total size of the Web Mercator projection
+    Returns
+    -------
+    tuple[float, float]
+        ``(ll_x, ll_y)`` lower-left corner in Web Mercator metres.
+    """
     total_size = 20037508.34 * 2
-
-    # Calculate tile size
     tile_size = total_size / (2**zoom)
-
-    # Calculate lower-left corner coordinates
     ll_x = tile_x * tile_size - 20037508.34
     ll_y = 20037508.34 - (tile_y + 1) * tile_size
-
     return ll_x, ll_y
 
 
-# def rgba2int(rgba):
-#     """Convert rgba tuple to int"""
-#     r, g, b, a = rgba
-#     return (r * 256**3) + (g * 256**2) + (b * 256) + a
-
-
-### Conversion between elevation and png and vice versa
-# Note: we only use the RGB channels for this (and not the alpha channel)
-
-
 def elevation2png(
-    val,
-    png_file,
-    encoder="terrarium",
-    encoder_vmin=0.0,
-    encoder_vmax=1.0,
-    compress_level=6,
-):
-    """Convert 256*256 Numpy array to png using terrarium interpretation"""
+    val: NDArray[np.floating],
+    png_file: str,
+    encoder: str = "terrarium",
+    encoder_vmin: float = 0.0,
+    encoder_vmax: float = 1.0,
+    compress_level: int = 6,
+) -> None:
+    """Convert a 256x256 NumPy array to a PNG tile using a specified encoder.
+
+    Parameters
+    ----------
+    val : NDArray[np.floating]
+        256x256 array of elevation or data values.
+    png_file : str
+        Output PNG file path.
+    encoder : str
+        Encoding scheme. One of ``"terrarium"``, ``"terrarium16"``, ``"uint8"``,
+        ``"uint16"``, ``"uint24"``, ``"uint32"``, ``"float8"``, ``"float16"``,
+        ``"float24"``, ``"float32"``.
+    encoder_vmin : float
+        Minimum value for float encoders.
+    encoder_vmax : float
+        Maximum value for float encoders.
+    compress_level : int
+        PNG compression level (0-9).
+
+    Raises
+    ------
+    ValueError
+        If values exceed the range supported by the chosen encoder.
+    """
     if encoder == "terrarium":
         rgb = np.zeros((256, 256, 3), "uint8")
         val += 32768.0
@@ -191,30 +345,19 @@ def elevation2png(
         rgb[:, :, 0] = np.floor(val / 256).astype(int)
         rgb[:, :, 1] = np.floor(val % 256).astype(int)
     elif encoder == "uint8":
-        # Unsigned integer8
-
-        # Check if any values in val are equal to or larger than 255
         if np.any(val >= 255):
-            # Throw an error
             raise ValueError(
                 "Some values in are equal to or larger than 255. This is not allowed for encoder 'uint8'."
             )
-
         rgb = np.zeros((256, 256, 3), "uint8") + 255
         r = val + 0
         r[np.where(val < 0)] = 255
         rgb[:, :, 0] = r
-
     elif encoder == "uint16":
-        # Unsigned integer16
-
-        # Check if any values in val are equal to or larger than 65535
         if np.any(val >= 65535):
-            # Throw an error
             raise ValueError(
                 "Some values are equal to or larger than 65535. This is not allowed for encoder 'uint16'."
             )
-
         rgb = np.zeros((256, 256, 3), "uint8") + 255
         r = (val // 256) % 256
         g = val % 256
@@ -223,15 +366,10 @@ def elevation2png(
         rgb[:, :, 0] = r
         rgb[:, :, 1] = g
     elif encoder == "uint24":
-        # Unsigned integer24
-
-        # Check if any values in val are equal to or larger than 16777215
         if np.any(val >= 16777215):
-            # Throw an error
             raise ValueError(
                 "Some values are equal to or larger than 16777215. This is not allowed for encoder 'uint24'."
             )
-
         rgb = np.zeros((256, 256, 3), "uint8") + 255
         r = (val // 256**2) % 256
         g = (val // 256) % 256
@@ -243,15 +381,10 @@ def elevation2png(
         rgb[:, :, 1] = g
         rgb[:, :, 2] = b
     elif encoder == "uint32":
-        # Unsigned integer32
-
-        # Check if any values in val are equal to or larger than 4294967295
         if np.any(val >= 4294967295):
-            # Throw an error
             raise ValueError(
                 "Some values are equal to or larger than 4294967295. This is not allowed for encoder 'uint32'."
             )
-
         rgb = np.zeros((256, 256, 4), "uint8") + 255
         r = (val // 256**3) % 256
         g = (val // 256**2) % 256
@@ -266,7 +399,6 @@ def elevation2png(
         rgb[:, :, 2] = b
         rgb[:, :, 3] = a
     elif encoder == "float8":
-        # Stretch to values between 1 and 256^1 - 1. NaN values are set to [0,0,0].
         val = np.maximum(val, encoder_vmin)
         val = np.minimum(val, encoder_vmax)
         val = val - encoder_vmin
@@ -275,7 +407,6 @@ def elevation2png(
         rgb = np.zeros((256, 256, 3), "uint8")
         rgb[:, :, 0] = i
     elif encoder == "float16":
-        # Stretch to values between 1 and 256^2 - 1. NaN values are set to [0,0,0].
         val = np.maximum(val, encoder_vmin)
         val = np.minimum(val, encoder_vmax)
         val = val - encoder_vmin
@@ -285,7 +416,6 @@ def elevation2png(
         rgb[:, :, 0] = (i // 256) % 256
         rgb[:, :, 1] = i % 256
     elif encoder == "float24":
-        # Stretch to values between 1 and 256^3 - 1. NaN values are set to [0,0,0].
         val = np.maximum(val, encoder_vmin)
         val = np.minimum(val, encoder_vmax)
         val = val - encoder_vmin
@@ -296,7 +426,6 @@ def elevation2png(
         rgb[:, :, 1] = (i // 256) % 256
         rgb[:, :, 2] = i % 256
     elif encoder == "float32":
-        # Stretch to values between 1 and 256^4 - 1. NaN values are set to [0,0,0].
         val = np.maximum(val, encoder_vmin)
         val = np.minimum(val, encoder_vmax)
         val = val - encoder_vmin
@@ -308,24 +437,42 @@ def elevation2png(
         rgb[:, :, 2] = (i // 256) % 256
         rgb[:, :, 3] = i % 256
 
-    # Create PIL Image from RGB values and save as PNG
     img = Image.fromarray(rgb)
     img.save(png_file, compress_level=compress_level)
 
 
-def png2elevation(png_file, encoder="terrarium", encoder_vmin=0.0, encoder_vmax=1.0):
-    """Convert png to elevation array based on terrarium interpretation"""
+def png2elevation(
+    png_file: str,
+    encoder: str = "terrarium",
+    encoder_vmin: float = 0.0,
+    encoder_vmax: float = 1.0,
+) -> NDArray[np.floating]:
+    """Convert a PNG tile back to an elevation array using a specified encoder.
+
+    Parameters
+    ----------
+    png_file : str
+        Input PNG file path.
+    encoder : str
+        Encoding scheme used when the tile was created.
+    encoder_vmin : float
+        Minimum value for float encoders.
+    encoder_vmax : float
+        Maximum value for float encoders.
+
+    Returns
+    -------
+    NDArray[np.floating]
+        256x256 array of decoded elevation or data values.
+    """
     img = Image.open(png_file)
-    # Convert RGB values to elevation values
     if encoder == "terrarium":
         rgb = np.array(img.convert("RGB")).astype(float)
         elevation = (rgb[:, :, 0] * 256 + rgb[:, :, 1] + rgb[:, :, 2] / 256) - 32768.0
-        # where val is less than -32767, set to NaN
         elevation[np.where(elevation < -32767.0)] = np.nan
     elif encoder == "terrarium16":
         rgb = np.array(img.convert("RGB")).astype(float)
         elevation = (rgb[:, :, 0] * 256 + rgb[:, :, 1]) - 32768.0
-        # where val is less than -32767, set to NaN
         elevation[np.where(elevation < -32767.0)] = np.nan
     elif encoder == "uint8":
         rgb = np.array(img.convert("RGB")).astype(int)
@@ -376,33 +523,21 @@ def png2elevation(png_file, encoder="terrarium", encoder_vmin=0.0, encoder_vmax=
     return elevation
 
 
-# def elevation2rgb(val):
-#     """Convert elevation to rgb tuple"""
-#     val += 32768
-#     r = np.floor(val / 256)
-#     g = np.floor(val % 256)
-#     b = np.floor((val - np.floor(val)) * 256)
-#     return (r, g, b)
+def png2int(png_file: str, idummy: int) -> NDArray[np.signedinteger]:
+    """Convert a PNG tile to an integer index array.
 
-# def rgb2elevation(r, g, b):
-#     """Convert rgb tuple to elevation"""
-#     val = (r * 256 + g + b / 256) - 32768
-#     return val
+    Parameters
+    ----------
+    png_file : str
+        Input PNG file path.
+    idummy : int
+        Value to assign to pixels that decode as the maximum RGBA integer (no-data).
 
-# def rgb2elevation(rgb):
-#     """Convert rgb tuple to elevation"""
-#     val = (rgb[:,:,0] * 256 + rgb[:,:,1] + rgb[:,:,2] / 256) - 32768.0
-#     # where val is less than -32767, set to NaN
-#     val[val<-32767.0] = np.nan
-#     return val
-
-
-### Conversion between int and png and vice versa
-
-
-def png2int(png_file, idummy):
-    """Convert png to int array"""
-    # Open the PNG image
+    Returns
+    -------
+    NDArray[np.signedinteger]
+        256x256 integer index array.
+    """
     image = Image.open(png_file)
     rgba = np.array(image.convert("RGBA")).astype(int)
     ind = (
@@ -415,9 +550,16 @@ def png2int(png_file, idummy):
     return ind
 
 
-def int2png(val, png_file):
-    """Convert int array to png"""
-    # Convert index integers to RGBA values
+def int2png(val: NDArray[np.signedinteger], png_file: str) -> None:
+    """Convert an integer index array to a PNG tile.
+
+    Parameters
+    ----------
+    val : NDArray[np.signedinteger]
+        256x256 integer array. Negative values are encoded as no-data (all 255).
+    png_file : str
+        Output PNG file path.
+    """
     rgba = np.zeros((256, 256, 4), "uint8") + 255
     r = (val // 256**3) % 256
     g = (val // 256**2) % 256
@@ -431,17 +573,35 @@ def int2png(val, png_file):
     rgba[:, :, 1] = g
     rgba[:, :, 2] = b
     rgba[:, :, 3] = a
-    # Create PIL Image from RGB values and save as PNG
     img = Image.fromarray(rgba)
     img.save(png_file)
 
 
-def makedir(path):
+def makedir(path: str) -> None:
+    """Create a directory (and parents) if it does not already exist.
+
+    Parameters
+    ----------
+    path : str
+        Directory path to create.
+    """
     if not os.path.exists(path):
         os.makedirs(path)
 
 
-def list_files(src):
+def list_files(src: str) -> list[str]:
+    """List files matching a glob pattern.
+
+    Parameters
+    ----------
+    src : str
+        Glob pattern (e.g. ``"/data/*.png"``).
+
+    Returns
+    -------
+    list[str]
+        List of matching file paths.
+    """
     file_list = []
     full_list = glob.glob(src)
     for item in full_list:
@@ -450,12 +610,25 @@ def list_files(src):
     return file_list
 
 
-def list_folders(src, basename=False):
+def list_folders(src: str, basename: bool = False) -> list[str]:
+    """List directories matching a glob pattern.
+
+    Parameters
+    ----------
+    src : str
+        Glob pattern.
+    basename : bool
+        If True, return only the directory base names instead of full paths.
+
+    Returns
+    -------
+    list[str]
+        List of matching directory paths (or base names).
+    """
     folder_list = []
     full_list = glob.glob(src)
     for item in full_list:
         if os.path.isdir(item):
-            # folder_list.append(item)
             if basename:
                 folder_list.append(os.path.basename(item))
             else:
@@ -464,26 +637,62 @@ def list_folders(src, basename=False):
     return folder_list
 
 
-def interp2(x0, y0, z0, x1, y1):
+def interp2(
+    x0: NDArray[np.floating],
+    y0: NDArray[np.floating],
+    z0: NDArray[np.floating],
+    x1: NDArray[np.floating],
+    y1: NDArray[np.floating],
+) -> NDArray[np.floating]:
+    """Bilinear interpolation from a regular grid onto scattered target points.
+
+    Parameters
+    ----------
+    x0 : NDArray[np.floating]
+        1-D x-coordinates of the source grid.
+    y0 : NDArray[np.floating]
+        1-D y-coordinates of the source grid.
+    z0 : NDArray[np.floating]
+        2-D source values, shape ``(len(y0), len(x0))``.
+    x1 : NDArray[np.floating]
+        2-D target x-coordinates.
+    y1 : NDArray[np.floating]
+        2-D target y-coordinates, same shape as *x1*.
+
+    Returns
+    -------
+    NDArray[np.floating]
+        Interpolated values at target locations, same shape as *x1*.
+    """
     f = RegularGridInterpolator((y0, x0), z0, bounds_error=False, fill_value=np.nan)
-    # reshape x1 and y1
     sz = x1.shape
     x1 = x1.reshape(sz[0] * sz[1])
     y1 = y1.reshape(sz[0] * sz[1])
-    # interpolate
     z1 = f((y1, x1)).reshape(sz)
     return z1
 
 
-def binary_search(val_array, vals):
-    indx = np.searchsorted(val_array, vals)  # ind is size of vals
-    not_ok = np.where(indx == len(val_array))[
-        0
-    ]  # size of vals, points that are out of bounds
-    indx[np.where(indx == len(val_array))[0]] = (
-        0  # Set to zero to avoid out of bounds error
-    )
-    is_ok = np.where(val_array[indx] == vals)[0]  # size of vals
+def binary_search(
+    val_array: NDArray[np.number], vals: NDArray[np.number]
+) -> NDArray[np.signedinteger]:
+    """Find indices of *vals* within a sorted *val_array* using binary search.
+
+    Parameters
+    ----------
+    val_array : NDArray[np.number]
+        Sorted 1-D array of reference values.
+    vals : NDArray[np.number]
+        Values to look up.
+
+    Returns
+    -------
+    NDArray[np.signedinteger]
+        Index into *val_array* for each element of *vals*, or -1 if not found.
+    """
+    indx = np.searchsorted(val_array, vals)
+    not_ok = np.where(indx == len(val_array))[0]
+    indx[np.where(indx == len(val_array))[0]] = 0
+    is_ok = np.where(val_array[indx] == vals)[0]
     indices = np.zeros(len(vals), dtype=int) - 1
     indices[is_ok] = indx[is_ok]
     indices[not_ok] = -1

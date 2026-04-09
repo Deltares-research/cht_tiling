@@ -1,8 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu May 27 14:51:04 2021
+"""Tiled web map creation and management for elevation, flood, and RGBA tile datasets.
 
-@author: ormondt
+Provides the TiledWebMap class for generating, reading, uploading, and managing
+slippy-map tile pyramids with support for various encoders (terrarium, mapbox)
+and tile types (elevation data, RGBA imagery, index tiles).
 """
 
 import os
@@ -16,8 +16,8 @@ import xarray as xr
 from botocore import UNSIGNED
 from botocore.client import Config
 
-from cht_tiling.index_tiles import make_index_tiles
 from cht_tiling.data_tiles import make_data_tiles
+from cht_tiling.index_tiles import make_index_tiles
 from cht_tiling.rgba_tiles import make_rgba_tiles
 from cht_tiling.topobathy_tiles import (
     make_topobathy_tiles_lower_levels,
@@ -35,59 +35,162 @@ from cht_tiling.webviewer import write_html
 
 
 class ZoomLevel:
-    def __init__(self):
-        self.ntiles = 0
-        self.ij_available = None
+    """Container for tile availability data at a single zoom level.
+
+    Attributes
+    ----------
+    ntiles : int
+        Number of tiles along one axis at this zoom level.
+    ij_available : np.ndarray | None
+        Flattened array of available tile indices (i * ntiles + j).
+    """
+
+    def __init__(self) -> None:
+        self.ntiles: int = 0
+        self.ij_available: np.ndarray | None = None
 
 
 class TiledWebMap:
-    def __init__(self,
-                 path: str | Path,                 
-                 data=None,
-                 type="rgba",
-                 parameter="other",
-                 encoder="terrarium",
-                 encoder_vmin=None,
-                 encoder_vmax=None,
-                 name="unknown",
-                 long_name="Unknown dataset",
-                 url=None,
-                 npix=256,
-                 max_zoom=0,
-                 s3_client=None,
-                 s3_bucket=None,
-                 s3_key=None,
-                 s3_region=None,
-                 source="unknown",
-                 vertical_reference_level="MSL",
-                 vertical_units="m",
-                 difference_with_msl=0.0,
-                 index_path=None,
-                 topo_path=None,
-                 zoom_range=None,
-                 color_values=None,
-                 caxis=None,
-                 zbmax=0.0,
-                 minimum_depth=0.05,
-                 data_catalog=None,
-                 lon_range=None,
-                 lat_range=None,
-                 z_range=[-999999.0, 999999.0],
-                 dx_max_zoom=None,
-                 write_metadata=False,
-                 write_availability=True,
-                 make_lower_levels=True,
-                 make_highest_level=True,
-                 skip_existing=False,
-                 make_webviewer=True,
-                 merge=True,
-                 parallel=True,
-                 interpolation_method="linear",
-                 quiet=False,
-                 ):
+    """Manages a slippy-map tile pyramid for elevation, RGBA, or index data.
 
-        """Tiled Web Map class"""
+    Supports generating tile pyramids from raster data, reading existing
+    tile sets, downloading tiles from S3, and uploading to S3. Tile types
+    include terrarium/mapbox-encoded elevation, RGBA imagery, and integer
+    index tiles.
 
+    Parameters
+    ----------
+    path : str | Path
+        Root directory for the tile pyramid.
+    data : object | None
+        Input data for tile generation. Type depends on tile type.
+    type : str
+        Tile type: ``"rgba"`` or ``"data"``.
+    parameter : str
+        Data parameter: ``"elevation"``, ``"index"``, ``"indices"``, or other.
+    encoder : str
+        Elevation encoder: ``"terrarium"`` or ``"mapbox"``.
+    encoder_vmin : float | None
+        Minimum value for custom encoder range.
+    encoder_vmax : float | None
+        Maximum value for custom encoder range.
+    name : str
+        Short name of the dataset.
+    long_name : str
+        Human-readable dataset description.
+    url : str | None
+        Base URL for the tile service.
+    npix : int
+        Pixels per tile edge (default 256).
+    max_zoom : int
+        Maximum zoom level.
+    s3_client : object | None
+        Pre-configured boto3 S3 client.
+    s3_bucket : str | None
+        S3 bucket name for downloads/uploads.
+    s3_key : str | None
+        S3 key prefix for tile storage.
+    s3_region : str | None
+        AWS region for S3 access.
+    source : str
+        Data source identifier.
+    vertical_reference_level : str
+        Vertical datum (e.g. ``"MSL"``).
+    vertical_units : str
+        Vertical units (e.g. ``"m"``).
+    difference_with_msl : float
+        Offset from MSL in vertical units.
+    index_path : str | None
+        Path to pre-existing index tiles.
+    topo_path : str | None
+        Path to pre-existing topobathy tiles.
+    zoom_range : list[int] | None
+        Two-element list ``[min_zoom, max_zoom]``.
+    color_values : list[dict] | None
+        Discrete color definitions for RGBA tiles.
+    caxis : list[float] | None
+        Color axis range ``[vmin, vmax]``.
+    zbmax : float
+        Maximum bed level for flood masking.
+    minimum_depth : float
+        Minimum water depth threshold.
+    data_catalog : object | None
+        HydroMT data catalog instance.
+    lon_range : list[float] | None
+        Longitude range ``[lon_min, lon_max]``.
+    lat_range : list[float] | None
+        Latitude range ``[lat_min, lat_max]``.
+    z_range : list[float]
+        Valid elevation range ``[z_min, z_max]``.
+    dx_max_zoom : float | None
+        Resolution in metres for the highest zoom level.
+    write_metadata : bool
+        Whether to write a metadata TOML file.
+    write_availability : bool
+        Whether to write an availability NetCDF file.
+    make_lower_levels : bool
+        Whether to generate lower zoom levels by downsampling.
+    make_highest_level : bool
+        Whether to generate the highest zoom level tiles.
+    skip_existing : bool
+        Whether to skip tiles that already exist on disk.
+    make_webviewer : bool
+        Whether to generate an HTML viewer page.
+    merge : bool
+        Whether to merge new tiles with existing ones.
+    parallel : bool
+        Whether to use parallel processing.
+    interpolation_method : str
+        Interpolation method for resampling (e.g. ``"linear"``).
+    quiet : bool
+        Whether to suppress progress output.
+    """
+
+    def __init__(
+        self,
+        path: str | Path,
+        data: object = None,
+        type: str = "rgba",
+        parameter: str = "other",
+        encoder: str = "terrarium",
+        encoder_vmin: float | None = None,
+        encoder_vmax: float | None = None,
+        name: str = "unknown",
+        long_name: str = "Unknown dataset",
+        url: str | None = None,
+        npix: int = 256,
+        max_zoom: int = 0,
+        s3_client: object = None,
+        s3_bucket: str | None = None,
+        s3_key: str | None = None,
+        s3_region: str | None = None,
+        source: str = "unknown",
+        vertical_reference_level: str = "MSL",
+        vertical_units: str = "m",
+        difference_with_msl: float = 0.0,
+        index_path: str | None = None,
+        topo_path: str | None = None,
+        zoom_range: list[int] | None = None,
+        color_values: list[dict] | None = None,
+        caxis: list[float] | None = None,
+        zbmax: float = 0.0,
+        minimum_depth: float = 0.05,
+        data_catalog: object = None,
+        lon_range: list[float] | None = None,
+        lat_range: list[float] | None = None,
+        z_range: list[float] = [-999999.0, 999999.0],
+        dx_max_zoom: float | None = None,
+        write_metadata: bool = False,
+        write_availability: bool = True,
+        make_lower_levels: bool = True,
+        make_highest_level: bool = True,
+        skip_existing: bool = False,
+        make_webviewer: bool = True,
+        merge: bool = True,
+        parallel: bool = True,
+        interpolation_method: str = "linear",
+        quiet: bool = False,
+    ) -> None:
         # Set all keyword/value pairs as attributes
         for key, value in locals().items():
             if key in ("self", "path"):
@@ -95,12 +198,6 @@ class TiledWebMap:
             setattr(self, key, value)
 
         self.path = str(path)
-
-        # # Parameter may be one of the following: elevation, floodmap, topography, index, data, rgba
-        # if self.parameter not in ["elevation", "floodmap", "topography", "index", "data", "rgba"]:
-        #     raise ValueError(
-        #         "Parameter must be one of the following: elevation, floodmap, topography, index, data, rgba"
-        #     )
 
         self.read_metadata()
         # Check if available_tiles.nc exists. If not, just read the folders to get the zoom range.
@@ -119,11 +216,38 @@ class TiledWebMap:
         else:
             self.download = False
 
+    def get_data(
+        self,
+        xl: list[float],
+        yl: list[float],
+        max_pixel_size: float,
+        crs: object = None,
+        waitbox: object = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Retrieve elevation data for a bounding box at a given resolution.
 
-    def get_data(self, xl, yl, max_pixel_size, crs=None, waitbox=None):
-        # xl and yl are in CRS 3857
-        # max_pixel_size is in meters
-        # returns x, y, and z in CRS 3857
+        Reads tiles from disk, downloading missing ones from S3 if configured.
+        Coordinates are in EPSG:3857.
+
+        Parameters
+        ----------
+        xl : list[float]
+            X extent ``[x_min, x_max]`` in EPSG:3857.
+        yl : list[float]
+            Y extent ``[y_min, y_max]`` in EPSG:3857.
+        max_pixel_size : float
+            Maximum pixel size in metres, used to select the zoom level.
+        crs : object, optional
+            Coordinate reference system (currently unused).
+        waitbox : object, optional
+            Callable that returns a progress dialog with a ``.close()`` method.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            ``(x, y, z)`` arrays where *x* and *y* are 1-D coordinate arrays
+            in EPSG:3857 and *z* is the 2-D elevation grid.
+        """
         # Check if availability matrix exists but has not been loaded
         if self.availability_exists and not self.availability_loaded:
             self.read_availability()
@@ -140,7 +264,6 @@ class TiledWebMap:
         # Make sure indices are within bounds
         ix0 = max(0, ix0)
         iy0 = max(0, iy0)
-        # ix1 = min(2**izoom - 1, ix1)
         iy1 = min(2**izoom - 1, iy1)
 
         # Create empty array
@@ -158,9 +281,7 @@ class TiledWebMap:
                 itile = np.mod(i, 2**izoom)  # wrap around
                 ifolder = str(itile)
                 for j in range(iy0, iy1 + 1):
-                    png_file = os.path.join(
-                        self.path, str(izoom), ifolder, str(j) + ".png"
-                    )
+                    png_file = os.path.join(self.path, str(izoom), ifolder, f"{j}.png")
                     if not os.path.exists(png_file):
                         # File does not yet exist
                         if self.availability_exists:
@@ -171,7 +292,7 @@ class TiledWebMap:
                         # Add to download_list
                         download_file_list.append(png_file)
                         download_key_list.append(
-                            f"{self.s3_key}/{str(izoom)}/{ifolder}/{str(j)}.png"
+                            f"{self.s3_key}/{izoom}/{ifolder}/{j}.png"
                         )
                         # Make sure the folder exists
                         if not Path(png_file).parent.exists():
@@ -203,7 +324,7 @@ class TiledWebMap:
             itile = np.mod(i, 2**izoom)  # wrap around
             ifolder = str(itile)
             for j in range(iy0, iy1 + 1):
-                png_file = os.path.join(self.path, str(izoom), ifolder, str(j) + ".png")
+                png_file = os.path.join(self.path, str(izoom), ifolder, f"{j}.png")
 
                 if not os.path.exists(png_file):
                     continue
@@ -235,21 +356,21 @@ class TiledWebMap:
 
         return x, y, z
 
-    def make(self):
-        """"Make tiles."""
-
+    def make(self) -> None:
+        """Generate the tile pyramid based on the configured type and parameter."""
         if self.zoom_range is None:
             self.set_zoom_range()
 
-        if self.type == "data":  
-
+        if self.type == "data":
             if self.parameter == "elevation":
                 # Elevation tiles (default terrarium encoding)
                 # self.data is a list of dicts (for bathymetry database)
                 if self.make_highest_level:
                     # Now loop through datasets in data_list (if zoom range is none and there is an index_path, it is set here)
                     for idata, data_dict in enumerate(self.data):
-                        print(f"Processing {data_dict['name']} ... ({idata + 1} of {len(self.data)})")
+                        print(
+                            f"Processing {data_dict['name']} ... ({idata + 1} of {len(self.data)})"
+                        )
                         make_topobathy_tiles_top_level(
                             self,
                             data_dict,
@@ -279,19 +400,20 @@ class TiledWebMap:
 
         if self.make_webviewer:
             write_html(
-                os.path.join(self.path, "index.html"), max_native_zoom=self.zoom_range[1]
+                os.path.join(self.path, "index.html"),
+                max_native_zoom=self.zoom_range[1],
             )
 
-    def read_metadata(self):
-        # Read metadata file
+    def read_metadata(self) -> None:
+        """Read metadata from the TOML file in the tile directory, if present."""
         tml_file = os.path.join(self.path, "metadata.tml")
         if os.path.exists(tml_file):
             tml = toml.load(tml_file)
             for key in tml:
                 setattr(self, key, tml[key])
 
-    def read_availability(self):
-        # Read netcdf file with dimensions
+    def read_availability(self) -> None:
+        """Load the tile availability matrix from ``available_tiles.nc``."""
         nc_file = os.path.join(self.path, "available_tiles.nc")
 
         with xr.open_dataset(nc_file) as ds:
@@ -308,7 +430,8 @@ class TiledWebMap:
                 zoom_level.ij_available = iav * n + jav
                 self.zoom_levels.append(zoom_level)
 
-    def set_zoom_range(self):
+    def set_zoom_range(self) -> None:
+        """Determine the zoom range from index tiles, dx, or a default."""
         if self.index_path is None:
             # No index path either
             if self.dx_max_zoom is None:
@@ -320,7 +443,9 @@ class TiledWebMap:
             zoom_max = get_zoom_level_for_resolution(self.dx_max_zoom)
         else:
             # Index path is provided, so we can determine the max zoom from that
-            zoom_levels = list_folders(os.path.join(self.index_path, "*"), basename=True)
+            zoom_levels = list_folders(
+                os.path.join(self.index_path, "*"), basename=True
+            )
             if zoom_levels:
                 # zoom_levels is a list of strings, convert to int and sort
                 zoom_levels = [int(z) for z in zoom_levels]
@@ -328,47 +453,92 @@ class TiledWebMap:
                 zoom_max = zoom_levels[-1]
         self.zoom_range = [0, zoom_max]
 
-    def check_availability(self, i, j, izoom):
-        # Check if tile exists at all
+    def check_availability(self, i: int, j: int, izoom: int) -> bool:
+        """Check whether a tile is available at the given zoom level.
+
+        Parameters
+        ----------
+        i : int
+            Tile column index.
+        j : int
+            Tile row index.
+        izoom : int
+            Zoom level.
+
+        Returns
+        -------
+        bool
+            True if the tile is available.
+        """
         zoom_level = self.zoom_levels[izoom]
         ij = i * zoom_level.ntiles + j
         # Use numpy array for fast search
         available = np.isin(ij, zoom_level.ij_available)
         return available
 
-    def download_tile(self, i, j, izoom):
+    def download_tile(self, i: int, j: int, izoom: int) -> bool:
+        """Download a single tile from S3.
+
+        Parameters
+        ----------
+        i : int
+            Tile column index.
+        j : int
+            Tile row index.
+        izoom : int
+            Zoom level.
+
+        Returns
+        -------
+        bool
+            True if the download succeeded.
+        """
         key = f"{self.s3_key}/{izoom}/{i}/{j}.png"
-        filename = os.path.join(self.path, str(izoom), str(i), str(j) + ".png")
+        filename = os.path.join(self.path, str(izoom), str(i), f"{j}.png")
         try:
             self.s3_client.download_file(
-                Bucket=self.bucket,  # assign bucket name
-                Key=key,  # key is the file name
+                Bucket=self.bucket,
+                Key=key,
                 Filename=filename,
-            )  # storage file path
+            )
             print(f"Downloaded {key}")
             okay = True
         except Exception:
-            # Download failed
             print(f"Failed to download {key}")
             okay = False
         return okay
 
-    def download_tile_parallel(self, bucket, key, file):
+    def download_tile_parallel(self, bucket: str, key: str, file: str) -> bool:
+        """Download a single tile from S3 (for use with ThreadPool).
+
+        Parameters
+        ----------
+        bucket : str
+            S3 bucket name.
+        key : str
+            S3 object key.
+        file : str
+            Local file path to save the tile.
+
+        Returns
+        -------
+        bool
+            True if the download succeeded.
+        """
         try:
             # Make sure the folder exists
             if not os.path.exists(os.path.dirname(file)):
                 os.makedirs(os.path.dirname(file))
 
             self.s3_client.download_file(
-                Bucket=bucket,  # assign bucket name
-                Key=key,  # key is the file name
+                Bucket=bucket,
+                Key=key,
                 Filename=file,
-            )  # storage file path
+            )
             print(f"Downloaded {key}")
             okay = True
 
         except Exception as e:
-            # Download failed
             print(e)
             print(f"Failed to download {key}")
             okay = False
@@ -377,20 +547,37 @@ class TiledWebMap:
 
     def upload(
         self,
-        bucket_name,
-        s3_folder,
-        access_key,
-        secret_key,
-        region,
-        parallel=True,
-        quiet=True,
-    ):
+        bucket_name: str,
+        s3_folder: str,
+        access_key: str,
+        secret_key: str,
+        region: str,
+        parallel: bool = True,
+        quiet: bool = True,
+    ) -> None:
+        """Upload the tile pyramid to an S3 bucket.
+
+        Parameters
+        ----------
+        bucket_name : str
+            Target S3 bucket name.
+        s3_folder : str
+            S3 folder prefix.
+        access_key : str
+            AWS access key.
+        secret_key : str
+            AWS secret key.
+        region : str
+            AWS region.
+        parallel : bool
+            Whether to upload files in parallel.
+        quiet : bool
+            Whether to suppress progress output.
+        """
         from cht_utils.remote.s3 import S3Session
 
-        # Upload to S3
         try:
             s3 = S3Session(access_key, secret_key, region)
-            # Upload entire folder to S3 server
             s3.upload_folder(
                 bucket_name,
                 self.path,
@@ -398,19 +585,16 @@ class TiledWebMap:
                 parallel=parallel,
                 quiet=quiet,
             )
-        except BaseException:
+        except Exception:
             print("An error occurred while uploading !")
-        pass
 
-    def write_availability_file(self):
-        # Make availability file
-        # Loop through zoom levels
+    def write_availability_file(self) -> None:
+        """Write tile availability to ``available_tiles.nc``."""
         ds = xr.Dataset()
         zoom_level_paths = list_folders(os.path.join(self.path, "*"), basename=True)
         zoom_levels = [int(z) for z in zoom_level_paths]
         zoom_levels.sort()
         for izoom in zoom_levels:
-            # Create empty array
             n = 0
             iav = []
             jav = []
@@ -426,7 +610,6 @@ class TiledWebMap:
                     iav.append(i)
                     jav.append(j)
                     n += 1
-            # Now create dataarrays i_available and j_available
             iav = np.array(iav)
             jav = np.array(jav)
             dimname = f"n_{izoom}"
@@ -435,13 +618,13 @@ class TiledWebMap:
             ds[iname] = xr.DataArray(iav, dims=dimname)
             ds[jname] = xr.DataArray(jav, dims=dimname)
 
-        # Save to netcdf file
         nc_file = os.path.join(self.path, "available_tiles.nc")
         ds.to_netcdf(nc_file)
 
         ds.close()
 
-    def write_metadata_file(self):
+    def write_metadata_file(self) -> None:
+        """Write dataset metadata to ``metadata.tml``."""
         metadata = {}
 
         metadata["longname"] = self.long_name
@@ -481,9 +664,6 @@ class TiledWebMap:
             "These data are made available in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."
         )
 
-        # Write to toml file
-        # toml_file = os.path.join(path, name + ".tml")
         toml_file = os.path.join(self.path, "metadata.tml")
         with open(toml_file, "w") as f:
             toml.dump(metadata, f)
-

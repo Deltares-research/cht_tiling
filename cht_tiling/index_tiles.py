@@ -1,41 +1,76 @@
+"""Generate slippy-map index tiles that map each pixel to a grid cell index."""
+
+from __future__ import annotations
+
 import math
 import os
+from typing import Any
 
 import numpy as np
 from pyproj import CRS, Transformer
 
-from cht_tiling.utils import binary_search, deg2num, int2png, makedir, num2deg, png2elevation
+from cht_tiling.utils import (
+    binary_search,
+    deg2num,
+    int2png,
+    makedir,
+    num2deg,
+    png2elevation,
+)
 
 
-def make_index_tiles(twm, topo_path=None):
-    # The grid must be an XU grid !
+def make_index_tiles(twm: Any, topo_path: str | None = None) -> None:
+    """Create index tiles for a TiledWebMap grid, dispatching by grid type.
 
-    # Test to see whether this grid is:
-    # 1. A QuadTree grid
-    # 2. A regular grid
-    # 3. An irregular grid (a la FM)
+    Currently only QuadTree grids (identified by a ``"level"`` data array) are
+    supported.
 
+    Parameters
+    ----------
+    twm : Any
+        TiledWebMap instance with ``data``, ``path``, and ``zoom_range`` attributes.
+    topo_path : str | None
+        Optional path to pre-existing topography tiles used for masking.
+
+    Raises
+    ------
+    ValueError
+        If the grid type cannot be determined.
+    """
     if not twm.zoom_range:
-        # Set default zoom range
         twm.zoom_range = [0, 13]
 
-    # Check if grid has a "level" data array
     if "level" in twm.data:
-        # Must be a quadtree grid
         make_index_tiles_quadtree(twm.data, twm.path, twm.zoom_range, topo_path)
-
-    # elif "n" in grid and "m" in grid:
-    #     # Must be a regular grid
-    #     make_index_tiles_regular(grid, path, zoom_range, format)
-
-    # elif check for FM:
-    #     pass
-
     else:
         raise ValueError("Grid type not recognized by make_index_tiles")
 
 
-def make_index_tiles_quadtree(grid, path, zoom_range, topo_path):
+def make_index_tiles_quadtree(
+    grid: Any,
+    path: str,
+    zoom_range: list[int],
+    topo_path: str | None,
+) -> None:
+    """Generate index tiles for a QuadTree grid at each zoom level.
+
+    For every tile in the zoom range that overlaps the grid extent, each pixel is
+    mapped to the index of the finest-level grid cell that contains it. The result
+    is written as a 32-bit integer PNG tile.
+
+    Parameters
+    ----------
+    grid : Any
+        xarray-like grid dataset with attributes ``x0``, ``y0``, ``dx``, ``dy``,
+        ``nmax``, ``mmax``, ``rotation``, ``nr_levels`` and data variables
+        ``level``, ``n``, ``m``.
+    path : str
+        Output directory for the index tile pyramid.
+    zoom_range : list[int]
+        Two-element list ``[min_zoom, max_zoom]``.
+    topo_path : str | None
+        Optional path to topography tiles; pixels where elevation > 0 are masked out.
+    """
     npix = 256
 
     x0 = grid.attrs["x0"]
@@ -52,13 +87,10 @@ def make_index_tiles_quadtree(grid, path, zoom_range, topo_path):
     cosrot = math.cos(-rotation * math.pi / 180)
     sinrot = math.sin(-rotation * math.pi / 180)
 
-    # Find index of first cell in each level
     ifirst = np.zeros(nr_refinement_levels, dtype=int)
     for ilev in range(0, nr_refinement_levels):
-        # Find index of first cell with this level
         ifirst[ilev] = np.where(grid["level"].to_numpy()[:] == ilev + 1)[0][0]
 
-    # Compute lon/lat range
     bnds = grid.grid.bounds
 
     xmin = bnds[0] - 2 * dx
@@ -79,11 +111,11 @@ def make_index_tiles_quadtree(grid, path, zoom_range, topo_path):
     )
     transformer_b = Transformer.from_crs(CRS.from_epsg(3857), crs, always_xy=True)
 
-    i0_lev = []
-    i1_lev = []
-    nmax_lev = []
-    mmax_lev = []
-    nm_lev = []
+    i0_lev: list[int] = []
+    i1_lev: list[int] = []
+    nmax_lev: list[int] = []
+    mmax_lev: list[int] = []
+    nm_lev: list[np.ndarray] = []
     for level in range(nr_refinement_levels):
         i0 = ifirst[level]
         if level < nr_refinement_levels - 1:
@@ -99,7 +131,7 @@ def make_index_tiles_quadtree(grid, path, zoom_range, topo_path):
         nm_lev.append(mm * nmax_lev[level] + nn)
 
     for izoom in range(zoom_range[0], zoom_range[1] + 1):
-        print("Processing zoom level " + str(izoom))
+        print(f"Processing zoom level {izoom}")
 
         zoom_path = os.path.join(path, str(izoom))
 
@@ -110,37 +142,31 @@ def make_index_tiles_quadtree(grid, path, zoom_range, topo_path):
 
         ix0, iy0 = deg2num(lat_range[1], lon_range[0], izoom)
         ix1, iy1 = deg2num(lat_range[0], lon_range[1], izoom)
-        # ix1 = ix1 + 1
-        # iy1 = iy1 + 1
 
         for i in range(ix0, ix1 + 1):
             path_okay = False
             zoom_path_i = os.path.join(zoom_path, str(i))
 
             for j in range(iy0, iy1 + 1):
-                file_name = os.path.join(zoom_path_i, str(j) + ".png")
+                file_name = os.path.join(zoom_path_i, f"{j}.png")
 
                 zbtile = None
                 if topo_path is not None:
-                    file_name_topo = os.path.join(topo_path, str(izoom), str(i), str(j) + ".png")
+                    file_name_topo = os.path.join(
+                        topo_path, str(izoom), str(i), f"{j}.png"
+                    )
                     if os.path.exists(file_name_topo):
-                        # Read topo data from file
                         zbtile = png2elevation(file_name_topo)
 
-                # Compute lat/lon at upper left corner of tile
                 lat, lon = num2deg(i, j, izoom)
 
-                # Convert to Global Mercator
                 xo, yo = transformer_a.transform(lon, lat)
 
-                # Tile grid on local mercator
                 x = xo + xv[:] + 0.5 * dxy
                 y = yo - yv[:] - 0.5 * dxy
 
-                # Convert tile grid to crs of SFINCS model
                 x, y = transformer_b.transform(x, y)
 
-                # Now rotate around origin of SFINCS model
                 x00 = x - x0
                 y00 = y - y0
                 xg = x00 * cosrot - y00 * sinrot
@@ -157,22 +183,16 @@ def make_index_tiles_quadtree(grid, path, zoom_range, topo_path):
                     dyr = dy / 2**ilev
                     iind = np.floor(xg / dxr).astype(int)
                     jind = np.floor(yg / dyr).astype(int)
-                    # Now check whether this cell exists on this level
                     ind = iind * nmax + jind
                     ind[iind < 0] = -999
                     ind[jind < 0] = -999
                     ind[iind >= mmax] = -999
                     ind[jind >= nmax] = -999
 
-                    ingrid = np.isin(
-                        ind, nm_lev[ilev], assume_unique=False
-                    )  # return boolean for each pixel that falls inside a grid cell
-                    incell = np.where(
-                        ingrid
-                    )  # tuple of arrays of pixel indices that fall in a cell
+                    ingrid = np.isin(ind, nm_lev[ilev], assume_unique=False)
+                    incell = np.where(ingrid)
 
                     if incell[0].size > 0:
-                        # Now find the cell indices
                         try:
                             cell_indices = (
                                 binary_search(nm_lev[ilev], ind[incell[0], incell[1]])
@@ -183,17 +203,13 @@ def make_index_tiles_quadtree(grid, path, zoom_range, topo_path):
                             pass
 
                 if np.any(indx >= 0):
-                    # Check whether path exists
                     if not path_okay:
                         if not os.path.exists(zoom_path_i):
                             makedir(zoom_path_i)
                             path_okay = True
 
                     if zbtile is not None:
-                        # Where zbtile is greater than 0.0, set indx to -999
-                        # ibad = np.where((zbtile < zmin) | (zbtile > zmax))
                         ibad = np.where(zbtile > 0.0)
                         indx[ibad] = -999.0
 
-                    # And write indices to file
                     int2png(indx, file_name)

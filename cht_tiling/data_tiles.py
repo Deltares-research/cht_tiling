@@ -1,13 +1,33 @@
-import math
+"""Generate data tiles by mapping grid values through pre-computed index tiles."""
+
+from __future__ import annotations
+
 import os
+from typing import Any
 
 import numpy as np
 
-from cht_tiling.utils import makedir, list_folders, list_files, png2int, elevation2png
+from cht_tiling.utils import elevation2png, list_files, list_folders, makedir, png2int
 
 
-def make_data_tiles(twm):
-    # index path MUST be provided
+def make_data_tiles(twm: Any) -> None:
+    """Create data-value PNG tiles for each zoom level using index tiles.
+
+    For every existing index tile, the corresponding grid cell values are looked
+    up and encoded into a PNG tile using the configured encoder.
+
+    Parameters
+    ----------
+    twm : Any
+        TiledWebMap instance with attributes ``index_path``, ``data``, ``path``,
+        ``zoom_range``, ``caxis``, ``quiet``, ``encoder``, ``encoder_vmin``,
+        and ``encoder_vmax``.
+
+    Raises
+    ------
+    ValueError
+        If ``twm.index_path`` is None.
+    """
     if twm.index_path is None:
         raise ValueError("index_path must be provided for data tiles")
 
@@ -21,9 +41,8 @@ def make_data_tiles(twm):
         twm.caxis.append(np.nanmax(valg))
 
     for izoom in range(twm.zoom_range[0], twm.zoom_range[1] + 1):
-
         if not twm.quiet:
-            print("Processing zoom level " + str(izoom))
+            print(f"Processing zoom level {izoom}")
 
         index_zoom_path = os.path.join(twm.index_path, str(izoom))
 
@@ -44,28 +63,17 @@ def make_data_tiles(twm):
                 j = int(jfile[:-4])
 
                 index_file = os.path.join(index_zoom_path_i, jfile)
-                png_file = os.path.join(png_zoom_path_i, str(j) + ".png")
+                png_file = os.path.join(png_zoom_path_i, f"{j}.png")
 
                 ind = png2int(index_file, -1)
 
                 valt = valg[ind]
                 valt[ind < 0] = np.nan
 
-
                 if not path_okay:
                     if not os.path.exists(png_zoom_path_i):
                         makedir(png_zoom_path_i)
                         path_okay = True
-
-                # if os.path.exists(png_file):
-                #     # This tile already exists
-                #     if twm.merge:
-                #         im0 = Image.open(png_file)
-                #         rgb = np.array(im)
-                #         rgb0 = np.array(im0)
-                #         isum = np.sum(rgb, axis=2)
-                #         rgb[isum == 0, :] = rgb0[isum == 0, :]
-                #         im = Image.fromarray(rgb)
 
                 elevation2png(
                     valt,
@@ -74,5 +82,3 @@ def make_data_tiles(twm):
                     encoder_vmin=twm.encoder_vmin,
                     encoder_vmax=twm.encoder_vmax,
                 )
-
- 

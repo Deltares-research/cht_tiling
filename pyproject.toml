@@ -30,7 +30,8 @@ dependencies = [
     "contextily",
     "rasterio",
     "rioxarray",
-    "cht_bathymetry"
+    "hydromt",
+    "geopandas",
 ]
 
 [project.optional-dependencies] # extra dependencies for additional functionality, will be part of the published package

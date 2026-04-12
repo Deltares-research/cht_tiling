@@ -47,19 +47,21 @@ jobs:
       name: SonarQube Scan
       runs-on: ubuntu-latest
       needs: test
-      if: secrets.SONAR_TOKEN != ''
       continue-on-error: true
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       steps:
         - uses: actions/checkout@v3
+          if: env.SONAR_TOKEN != ''
           with:
             fetch-depth: 0
 
         - name: Download coverage report
+          if: env.SONAR_TOKEN != ''
           uses: actions/download-artifact@v4
           with:
             name: coverage-report
 
         - name: SonarQube Scan
+          if: env.SONAR_TOKEN != ''
           uses: SonarSource/sonarqube-scan-action@v6
-          env:
-            SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

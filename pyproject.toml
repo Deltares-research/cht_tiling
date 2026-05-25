@@ -26,7 +26,7 @@ dependencies = [
     "toml",
     "boto3",
     "netCDF4",
-    "cht_utils",
+    "cht_utils@ git+https://github.com/deltares-research/cht_utils.git",
     "contextily",
     "rasterio",
     "rioxarray",
@@ -65,6 +65,10 @@ Source = "https://github.com/Deltares-research/cht_tiling"
 [tool.pytest.ini_options]
 addopts = "--cov cht_tiling --cov-report xml"
 testpaths = ["tests"]
+
+[tool.hatch.metadata]
+# Allow direct references (e.g. the cht_utils git+https URL dependency).
+allow-direct-references = true
 
 [tool.hatch.version]
 path = "cht_tiling/__init__.py"

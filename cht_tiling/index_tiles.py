@@ -203,7 +203,7 @@ def make_index_tiles_quadtree(
                             )
                             indx[incell[0], incell[1]] = cell_indices
                         except Exception:
-                            pass
+                            logger.error("Error in binary search for cell indices")
 
                 if np.any(indx >= 0):
                     if not path_okay:

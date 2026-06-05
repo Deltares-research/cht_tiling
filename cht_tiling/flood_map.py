@@ -80,17 +80,22 @@ class FloodMap:
         self.index_file = None
         self.zb = None
         self.indices = None
-        self.zbmin = 0.0
-        self.zbmax = 99999.9
-        self.hmin = 0.1
-        self.max_pixel_size = 0.0
-        self.data_array_name = "water_depth"
-        self.color_values = "default"
-        self.cmap = "jet"
-        self.cmin = 0.0
-        self.cmax = 1.0
-        self.discrete_colors = False
+        self.zbmin = zbmin
+        self.zbmax = zbmax
+        self.hmin = hmin
+        self.max_pixel_size = max_pixel_size
+        self.data_array_name = data_array_name
+        self.color_values = color_values if color_values is not None else "default"
+        self.cmap = cmap if cmap is not None else "jet"
+        self.cmin = cmin if cmin is not None else 0.0
+        self.cmax = cmax if cmax is not None else 1.0
+        self.discrete_colors = color_values is not None
         self.ds = xr.Dataset()
+
+        if topobathy_file is not None:
+            self.set_topobathy_file(topobathy_file)
+        if index_file is not None:
+            self.set_index_file(index_file)
 
         self.legend = {}
         self.legend["title"] = "Flood Depth (m)"
@@ -648,10 +653,9 @@ def get_rgb_data_array(
     xr.DataArray
         RGBA DataArray with shape ``(4, height, width)`` and dtype uint8.
     """
+    ny, nx = da.shape
     if color_values is not None:
-        ny, nx = da.shape
         zz = da.to_numpy()
-        rgba = np.zeros((ny, nx, 4), "uint8")
 
     if discrete_colors:
         if isinstance(color_values, str):
@@ -667,26 +671,22 @@ def get_rgb_data_array(
             )
             color_values.append({"color": "red", "lower_value": 2.0})
 
-        rgba = np.zeros((da.shape[0], da.shape[1], 4), dtype=np.float32)
-        for icolor, color_value in enumerate(color_values):
-            color_rgba = cm.colors.to_rgba(color_value["color"])
-            if "lower_value" in color_values and "upper_value" in color_value:
-                rgba[
-                    (da >= color_value["lower_value"])
-                    & (da < color_value["upper_value"]),
-                    :,
-                ] = color_rgba
-            elif "lower_value" in color_value:
-                rgba[(da >= color_value["lower_value"]), :] = color_rgba
-            elif "upper_value" in color_value:
-                rgba[(da < color_value["upper_value"]), :] = color_rgba
-            pass
-
-            # Mask out NaN values in zz
+        rgba = np.zeros((ny, nx, 4), "uint8")
+        for color_value in color_values:
+            lower = color_value.get("lower_value", -np.inf)
+            upper = color_value.get("upper_value", np.inf)
+            inr = np.logical_and(zz >= lower, zz < upper)
             valid = np.logical_and(inr, ~np.isnan(zz))
-            rgba[valid, 0] = color_value["rgb"][0]
-            rgba[valid, 1] = color_value["rgb"][1]
-            rgba[valid, 2] = color_value["rgb"][2]
+
+            if "rgb" in color_value:
+                rgba[valid, 0] = color_value["rgb"][0]
+                rgba[valid, 1] = color_value["rgb"][1]
+                rgba[valid, 2] = color_value["rgb"][2]
+            elif "color" in color_value:
+                color_rgba = cm.colors.to_rgba(color_value["color"])
+                rgba[valid, 0] = int(color_rgba[0] * 255)
+                rgba[valid, 1] = int(color_rgba[1] * 255)
+                rgba[valid, 2] = int(color_rgba[2] * 255)
             rgba[valid, 3] = 255
 
     else:

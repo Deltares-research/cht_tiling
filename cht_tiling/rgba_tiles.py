@@ -4,6 +4,7 @@ Supports flood maps, water level maps, topography, and direct value rendering
 with either discrete color ranges or continuous colormap scaling.
 """
 
+import logging
 import os
 
 import numpy as np
@@ -11,6 +12,8 @@ from matplotlib import cm
 from PIL import Image
 
 from cht_tiling.utils import list_files, list_folders, makedir, png2elevation, png2int
+
+logger = logging.getLogger(__name__)
 
 
 def make_rgba_tiles(twm: object) -> None:
@@ -89,7 +92,7 @@ def make_rgba_tiles(twm: object) -> None:
 
     for izoom in range(twm.zoom_range[0], twm.zoom_range[1] + 1):
         if not twm.quiet:
-            print(f"Processing zoom level {izoom}")
+            logger.info(f"Processing zoom level {izoom}")
 
         index_zoom_path = os.path.join(twm.index_path, str(izoom))
 

@@ -23,7 +23,9 @@ from cht_tiling.flood_map import (
     get_rgb_data_array,
     reproject_bbox,
 )
+import logging
 
+logger = logging.getLogger(__name__)
 
 class TopoBathyMap:
     """Manages reading, processing, and visualising topography/bathymetry data.
@@ -288,7 +290,7 @@ class TopoBathyMap:
             return True
 
         except Exception as e:
-            print(f"Error in map_overlay: {e}")
+            logger.exception(f"Error in map_overlay: {e}")
             return False
 
     def plot(

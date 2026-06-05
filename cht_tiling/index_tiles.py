@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 from typing import Any
@@ -17,6 +18,8 @@ from cht_tiling.utils import (
     num2deg,
     png2elevation,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def make_index_tiles(twm: Any, topo_path: str | None = None) -> None:
@@ -131,7 +134,7 @@ def make_index_tiles_quadtree(
         nm_lev.append(mm * nmax_lev[level] + nn)
 
     for izoom in range(zoom_range[0], zoom_range[1] + 1):
-        print(f"Processing zoom level {izoom}")
+        logger.info(f"Processing zoom level {izoom}")
 
         zoom_path = os.path.join(path, str(izoom))
 

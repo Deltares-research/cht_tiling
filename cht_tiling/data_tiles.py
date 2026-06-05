@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 import numpy as np
 
 from cht_tiling.utils import elevation2png, list_files, list_folders, makedir, png2int
+
+logger = logging.getLogger(__name__)
 
 
 def make_data_tiles(twm: Any) -> None:
@@ -42,7 +45,7 @@ def make_data_tiles(twm: Any) -> None:
 
     for izoom in range(twm.zoom_range[0], twm.zoom_range[1] + 1):
         if not twm.quiet:
-            print(f"Processing zoom level {izoom}")
+            logger.info(f"Processing zoom level {izoom}")
 
         index_zoom_path = os.path.join(twm.index_path, str(izoom))
 

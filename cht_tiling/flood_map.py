@@ -7,6 +7,7 @@ shared utilities for overview level selection, RGB conversion, and bounding
 box reprojection.
 """
 
+import logging
 import os
 from pathlib import Path
 
@@ -25,6 +26,8 @@ from rasterio.warp import Resampling
 
 import cht_tiling.fileops as fo
 from cht_tiling.utils import deg2num, num2deg, png2elevation, png2int
+
+logger = logging.getLogger(__name__)
 
 
 class FloodMap:
@@ -317,7 +320,10 @@ class FloodMap:
             True on success, False on failure.
         """
         if self.ds is None:
-            return
+            logger.error(
+                "Dataset is not initialized. Call make() or read() before map_overlay()."
+            )
+            return False
 
         try:
             lon_min = xlim[0]
@@ -415,6 +421,7 @@ class FloodMap:
             return True
 
         except Exception as e:
+            logger.exception(e)
             return False
 
     def plot(
@@ -841,7 +848,7 @@ def make_flood_map_tiles(
     izoom = zoom_range[1]
 
     if not quiet:
-        print(f"Processing zoom level {izoom}")
+        logger.info(f"Processing zoom level {izoom}")
 
     index_zoom_path = os.path.join(index_path, str(izoom))
 
@@ -934,7 +941,7 @@ def make_flood_map_tiles(
 
     for izoom in range(zoom_range[1] - 1, zoom_range[0] - 1, -1):
         if not quiet:
-            print(f"Processing zoom level {izoom}")
+            logger.info(f"Processing zoom level {izoom}")
 
         index_zoom_path = os.path.join(index_path, str(izoom))
 
@@ -1082,8 +1089,7 @@ def make_flood_map_overlay_v2(
     """
     try:
         if isinstance(valg, list):
-            print("valg is a list!")
-            pass
+            logger.info("valg is a list!")
         elif isinstance(valg, xr.DataArray):
             valg = valg.to_numpy()
             if mean_depth is not None:
@@ -1121,7 +1127,7 @@ def make_flood_map_overlay_v2(
         zz[:] = np.nan
 
         if not quiet:
-            print(f"Processing zoom level {izoom}")
+            logger.info(f"Processing zoom level {izoom}")
 
         index_zoom_path = os.path.join(index_path, str(izoom))
 
@@ -1212,6 +1218,5 @@ def make_flood_map_overlay_v2(
         return [lon0, lon1], [lat0, lat1], caxis
 
     except Exception as e:
-        print(e)
-        traceback.print_exc()
+        logger.exception(e)
         return None, None

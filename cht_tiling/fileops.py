@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import glob
+import logging
 import os
 import shutil
-import logging
 
 logger = logging.getLogger(__name__)
+
 
 def move_file(src: str, dst: str) -> None:
     """Move files matching a glob pattern to a destination directory.

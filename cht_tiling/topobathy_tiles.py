@@ -354,7 +354,9 @@ def create_highest_zoom_level_tile(
             da = data_catalog.get_rasterdataset(name, geom=geom, zoom=(dxy, "metre"))
             zg = da.values.astype(np.float64)
         except Exception:
-            logger.error(f"Could not fetch data for tile {i}/{j} at zoom level {izoom}. Falling back to NaN.")
+            logger.error(
+                f"Could not fetch data for tile {i}/{j} at zoom level {izoom}. Falling back to NaN."
+            )
             zg = np.full((len(y3857), len(x3857)), np.nan)
     else:
         zg = np.full(x3857.shape, np.nan)

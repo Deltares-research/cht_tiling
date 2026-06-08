@@ -5,6 +5,7 @@ slippy-map tile pyramids with support for various encoders (terrarium, mapbox)
 and tile types (elevation data, RGBA imagery, index tiles).
 """
 
+import logging
 import os
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
@@ -32,9 +33,9 @@ from cht_tiling.utils import (
     xy2num,
 )
 from cht_tiling.webviewer import write_html
-import logging
 
 logger = logging.getLogger(__name__)
+
 
 class ZoomLevel:
     """Container for tile availability data at a single zoom level.

@@ -5,6 +5,7 @@ maps, writing output files (GeoTIFF/NetCDF), creating map overlays, and
 plotting with matplotlib.
 """
 
+import logging
 from pathlib import Path
 
 import contextily as ctx
@@ -23,9 +24,9 @@ from cht_tiling.flood_map import (
     get_rgb_data_array,
     reproject_bbox,
 )
-import logging
 
 logger = logging.getLogger(__name__)
+
 
 class TopoBathyMap:
     """Manages reading, processing, and visualising topography/bathymetry data.

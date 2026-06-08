@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import glob
+import logging
 import os
 import shutil
+
+logger = logging.getLogger(__name__)
 
 
 def move_file(src: str, dst: str) -> None:
@@ -23,11 +26,11 @@ def move_file(src: str, dst: str) -> None:
             try:
                 os.remove(os.path.join(dst, src_name))
             except Exception:
-                print(f"Could not remove file {os.path.join(dst, src_name)}")
+                logger.error(f"Could not remove file {os.path.join(dst, src_name)}")
         try:
             shutil.move(full_file_name, dst)
         except Exception:
-            print(f"Could not move file {full_file_name}")
+            logger.error(f"Could not move file {full_file_name}")
 
 
 def copy_file(src: str, dst: str) -> None:
@@ -63,7 +66,7 @@ def delete_file(src: str) -> None:
         try:
             os.remove(src)
         except Exception:
-            print(f"Could not delete {src}")
+            logger.error(f"Could not delete {src}")
 
 
 def rm(src: str) -> None:
@@ -154,7 +157,7 @@ def delete_folder(src: str) -> None:
     try:
         shutil.rmtree(src, ignore_errors=False, onerror=None)
     except Exception:
-        print(f"Could not delete folder {src}")
+        logger.error(f"Could not delete folder {src}")
 
 
 def rmdir(src: str) -> None:
@@ -169,7 +172,7 @@ def rmdir(src: str) -> None:
         if os.path.exists(src):
             shutil.rmtree(src, ignore_errors=False, onerror=None)
     except Exception:
-        print(f"Could not delete folder {src}")
+        logger.error(f"Could not delete folder {src}")
 
 
 def exists(src: str) -> bool:

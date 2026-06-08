@@ -5,6 +5,7 @@ slippy-map tile pyramids with support for various encoders (terrarium, mapbox)
 and tile types (elevation data, RGBA imagery, index tiles).
 """
 
+import logging
 import os
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
@@ -32,6 +33,8 @@ from cht_tiling.utils import (
     xy2num,
 )
 from cht_tiling.webviewer import write_html
+
+logger = logging.getLogger(__name__)
 
 
 class ZoomLevel:
@@ -368,7 +371,7 @@ class TiledWebMap:
                 if self.make_highest_level:
                     # Now loop through datasets in data_list (if zoom range is none and there is an index_path, it is set here)
                     for idata, data_dict in enumerate(self.data):
-                        print(
+                        logger.info(
                             f"Processing {data_dict['name']} ... ({idata + 1} of {len(self.data)})"
                         )
                         make_topobathy_tiles_top_level(
@@ -501,10 +504,10 @@ class TiledWebMap:
                 Key=key,
                 Filename=filename,
             )
-            print(f"Downloaded {key}")
+            logger.info(f"Downloaded {key}")
             okay = True
         except Exception:
-            print(f"Failed to download {key}")
+            logger.error(f"Failed to download {key}")
             okay = False
         return okay
 
@@ -535,12 +538,12 @@ class TiledWebMap:
                 Key=key,
                 Filename=file,
             )
-            print(f"Downloaded {key}")
+            logger.info(f"Downloaded {key}")
             okay = True
 
         except Exception as e:
-            print(e)
-            print(f"Failed to download {key}")
+            logger.exception(e)
+            logger.error(f"Failed to download {key}")
             okay = False
 
         return okay
@@ -586,7 +589,7 @@ class TiledWebMap:
                 quiet=quiet,
             )
         except Exception:
-            print("An error occurred while uploading !")
+            logger.error("An error occurred while uploading !")
 
     def write_availability_file(self) -> None:
         """Write tile availability to ``available_tiles.nc``."""

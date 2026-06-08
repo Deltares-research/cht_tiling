@@ -5,6 +5,7 @@ maps, writing output files (GeoTIFF/NetCDF), creating map overlays, and
 plotting with matplotlib.
 """
 
+import logging
 from pathlib import Path
 
 import contextily as ctx
@@ -23,6 +24,8 @@ from cht_tiling.flood_map import (
     get_rgb_data_array,
     reproject_bbox,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class TopoBathyMap:
@@ -288,7 +291,7 @@ class TopoBathyMap:
             return True
 
         except Exception as e:
-            print(f"Error in map_overlay: {e}")
+            logger.exception(f"Error in map_overlay: {e}")
             return False
 
     def plot(

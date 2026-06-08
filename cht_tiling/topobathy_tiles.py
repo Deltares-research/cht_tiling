@@ -112,7 +112,7 @@ def make_topobathy_tiles_top_level(twm: object, data_dict: dict) -> None:
 
     # Loop in x direction
     for i in range(ix0, ix1 + 1):
-        print(f"Processing column {i - ix0 + 1} of {ix1 - ix0 + 1}")
+        logger.info(f"Processing column {i - ix0 + 1} of {ix1 - ix0 + 1}")
 
         zoom_path_i = os.path.join(zoom_path, str(i))
 
@@ -149,7 +149,7 @@ def make_topobathy_tiles_top_level(twm: object, data_dict: dict) -> None:
 
     t1 = time.time()
 
-    print(f"Elapsed time for zoom level {izoom}: {t1 - t0}")
+    logger.info(f"Elapsed time for zoom level {izoom}: {t1 - t0}")
 
 
 def make_topobathy_tiles_lower_levels(twm: object) -> None:
@@ -167,7 +167,7 @@ def make_topobathy_tiles_lower_levels(twm: object) -> None:
     npix = 256
 
     for izoom in range(twm.zoom_range[1] - 1, twm.zoom_range[0] - 1, -1):
-        print(f"Processing zoom level {izoom}")
+        logger.info(f"Processing zoom level {izoom}")
 
         t0 = time.time()
 
@@ -229,7 +229,7 @@ def make_topobathy_tiles_lower_levels(twm: object) -> None:
 
         t1 = time.time()
 
-        print(f"Elapsed time for zoom level {izoom}: {t1 - t0}")
+        logger.info(f"Elapsed time for zoom level {izoom}: {t1 - t0}")
 
 
 def bbox_xy2latlon(
@@ -354,6 +354,9 @@ def create_highest_zoom_level_tile(
             da = data_catalog.get_rasterdataset(name, geom=geom, zoom=(dxy, "metre"))
             zg = da.values.astype(np.float64)
         except Exception:
+            logger.error(
+                f"Could not fetch data for tile {i}/{j} at zoom level {izoom}. Falling back to NaN."
+            )
             zg = np.full((len(y3857), len(x3857)), np.nan)
     else:
         zg = np.full(x3857.shape, np.nan)

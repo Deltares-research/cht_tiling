@@ -26,6 +26,85 @@ from cht_tiling.utils import (
 logger = logging.getLogger(__name__)
 
 
+def interpolate_da_to_tile_grid(
+    da: object, x3857: np.ndarray, y3857: np.ndarray, method: str = "linear"
+) -> np.ndarray:
+    """Interpolate a raster DataArray onto a web-mercator tile pixel grid.
+
+    The DataArray may be in any CRS and on any (regular) grid; the tile grid
+    coordinates are transformed to the raster's CRS and the raster is then
+    bilinearly (or nearest-) interpolated at those points. Returns a float
+    array with the shape of ``x3857`` (NaN where the raster has no data).
+
+    A fast path returns the raw values when the raster already matches the
+    tile grid exactly (e.g. when reading from existing tiles via the
+    slippy_tile driver at native zoom).
+    """
+    import xarray as xr
+
+    da = da.squeeze(drop=True)
+
+    # Determine coordinate dimension names
+    x_dim = getattr(getattr(da, "raster", None), "x_dim", None)
+    y_dim = getattr(getattr(da, "raster", None), "y_dim", None)
+    if x_dim is None or y_dim is None:
+        for cand_x, cand_y in (("x", "y"), ("lon", "lat"), ("longitude", "latitude")):
+            if cand_x in da.dims and cand_y in da.dims:
+                x_dim, y_dim = cand_x, cand_y
+                break
+    if x_dim is None or y_dim is None:
+        raise ValueError(f"Could not determine x/y dimensions of raster ({da.dims})")
+
+    # Determine the raster CRS
+    da_crs = None
+    raster = getattr(da, "raster", None)
+    if raster is not None:
+        try:
+            da_crs = CRS.from_user_input(raster.crs)
+        except Exception:
+            da_crs = None
+    if da_crs is None:
+        rio = getattr(da, "rio", None)
+        if rio is not None and rio.crs is not None:
+            da_crs = CRS.from_user_input(rio.crs)
+    if da_crs is None:
+        # Assume WGS84 when nothing is specified
+        da_crs = CRS.from_epsg(4326)
+
+    # Fast path: raster already on this exact tile grid (within half a pixel)
+    if da_crs.to_epsg() == 3857 and da.shape == x3857.shape:
+        xs = da[x_dim].values
+        ys = da[y_dim].values
+        dxy = abs(x3857[0, 1] - x3857[0, 0])
+        if (
+            abs(xs[0] - x3857[0, 0]) < 0.5 * dxy
+            and abs(ys[0] - y3857[0, 0]) < 0.5 * dxy
+        ):
+            return da.values.astype(np.float64)
+
+    # Transform tile-grid coordinates to the raster CRS
+    if da_crs.to_epsg() == 3857:
+        xq, yq = x3857, y3857
+    else:
+        transformer = Transformer.from_crs(CRS.from_epsg(3857), da_crs, always_xy=True)
+        xq, yq = transformer.transform(x3857, y3857)
+
+    zi = da.interp(
+        {
+            x_dim: xr.DataArray(xq, dims=("_ty", "_tx")),
+            y_dim: xr.DataArray(yq, dims=("_ty", "_tx")),
+        },
+        method=method,
+    )
+    zg = zi.values.astype(np.float64)
+
+    # Replace the raster's nodata value with NaN if it survived interpolation
+    nodata = getattr(raster, "nodata", None) if raster is not None else None
+    if nodata is not None and not np.isnan(nodata):
+        zg[zg == nodata] = np.nan
+    return zg
+
+
 def make_topobathy_tiles_top_level(twm: object, data_dict: dict) -> None:
     """Generate highest-zoom-level elevation tiles from raster data.
 
@@ -84,6 +163,9 @@ def make_topobathy_tiles_top_level(twm: object, data_dict: dict) -> None:
             iy0 = min(iy0, min(it_list))
             iy1 = max(iy1, max(it_list))
     else:
+        # No index tiles: use the extent configured on the TiledWebMap.
+        lon_range = getattr(twm, "lon_range", None)
+        lat_range = getattr(twm, "lat_range", None)
         if lon_range is None or lat_range is None:
             # Without extent info, use the full world
             lon_range = [-180.0, 180.0]
@@ -175,6 +257,14 @@ def make_topobathy_tiles_lower_levels(twm: object) -> None:
         zoom_path_higher = os.path.join(twm.path, str(izoom + 1))
 
         # First determine ix0 and ix1 based on higher zoom level
+        if not os.path.isdir(zoom_path_higher) or not os.listdir(zoom_path_higher):
+            raise RuntimeError(
+                f"No tiles found at zoom level {izoom + 1} in {twm.path}. "
+                "The highest zoom level produced no tiles - check the log for "
+                "'Could not fetch data for tile' errors (data source not "
+                "readable?) or whether the data extent overlaps the requested "
+                "lon/lat range."
+            )
         ix_list = [int(i) for i in os.listdir(zoom_path_higher)]
         ix0_higher = min(ix_list)
         ix1_higher = max(ix_list)
@@ -345,17 +435,31 @@ def create_highest_zoom_level_tile(
     data_catalog = options["data_catalog"]
 
     if data_catalog is not None:
-        # HydroMT data catalog path
-        xmin, xmax = float(x3857.min()), float(x3857.max())
-        ymin, ymax = float(y3857.min()), float(y3857.max())
+        # HydroMT data catalog path. Buffer the tile bbox by a few tile pixels
+        # so interpolation at the tile edges has source cells to work with.
+        # Clamp to the web-mercator world extent: a bbox beyond +/-180 degrees
+        # wraps around when transformed to geographic coordinates, which
+        # inverts the bbox and makes the clip return everything EXCEPT the
+        # tile area (all-NaN tiles along the date line).
+        world = 20037508.342789244
+        buffer = 4 * dxy
+        xmin = max(float(x3857.min()) - buffer, -world)
+        xmax = min(float(x3857.max()) + buffer, world)
+        ymin = max(float(y3857.min()) - buffer, -world)
+        ymax = min(float(y3857.max()) + buffer, world)
         geom = gpd.GeoDataFrame(geometry=[box(xmin, ymin, xmax, ymax)], crs=3857)
         name = data_dict.get("elevation", data_dict.get("name"))
         try:
             da = data_catalog.get_rasterdataset(name, geom=geom, zoom=(dxy, "metre"))
-            zg = da.values.astype(np.float64)
-        except Exception:
+            # The source raster is on its own grid/CRS; interpolate onto the
+            # web-mercator tile pixel grid.
+            zg = interpolate_da_to_tile_grid(
+                da, x3857, y3857, method=options["interpolation_method"]
+            )
+        except Exception as e:
             logger.error(
-                f"Could not fetch data for tile {i}/{j} at zoom level {izoom}. Falling back to NaN."
+                f"Could not fetch data for tile {i}/{j} at zoom level {izoom}: "
+                f"{type(e).__name__}: {e}. Falling back to NaN."
             )
             zg = np.full((len(y3857), len(x3857)), np.nan)
     else:

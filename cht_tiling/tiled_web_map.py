@@ -167,6 +167,7 @@ class TiledWebMap:
         s3_bucket: str | None = None,
         s3_key: str | None = None,
         s3_region: str | None = None,
+        s3_endpoint: str | None = None,
         source: str = "unknown",
         vertical_reference_level: str = "MSL",
         vertical_units: str = "m",
@@ -308,7 +309,9 @@ class TiledWebMap:
                 # make boto s
                 if self.s3_client is None:
                     self.s3_client = boto3.client(
-                        "s3", config=Config(signature_version=UNSIGNED)
+                        "s3",
+                        endpoint_url=getattr(self, "s3_endpoint", None) or None,
+                        config=Config(signature_version=UNSIGNED),
                     )
                 # Download missing tiles
                 with ThreadPool() as pool:
@@ -640,6 +643,8 @@ class TiledWebMap:
         metadata["url"] = self.url
         if self.s3_bucket is not None:
             metadata["s3_bucket"] = self.s3_bucket
+        if getattr(self, "s3_endpoint", None):
+            metadata["s3_endpoint"] = self.s3_endpoint
         if self.s3_key is not None:
             metadata["s3_key"] = self.s3_key
         if self.s3_region is not None:
